@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<modDesc descVersion="63">
+    <title>TopconX35</title>
+    <description>Remake of the Topcon X35 GPS Monitor</description>
+    <author>CaptainDeathead</author>
+    <version>1.0.0.0</version>
+
+    <extraSourceFiles>
+        <sourceFile filename="script.lua"/>
+    </extraSourceFiles>
+
+    <specializations>
+    </specializations>
+</modDesc>
