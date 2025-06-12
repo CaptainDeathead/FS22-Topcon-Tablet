@@ -46,14 +46,18 @@ class DataManager:
 class Server:
     def __init__(self) -> None:
         self.wheel_disconnect = False
+        self.send_wheel_connect = False
 
     def on_wheel_disconnect(self) -> None:
         self.wheel_disconnect = True
 
+    def on_connect_pressed(self) -> None:
+        self.send_wheel_connect = True
+
     def run(self, data_manager) -> None:
         Thread(target=data_manager.run, daemon=True).start()
 
-        wheel = Wheel(self.on_wheel_disconnect)
+        wheel = Wheel(self.on_wheel_disconnect, self.on_connect_pressed)
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -75,8 +79,14 @@ class Server:
 
                     try:
                         data = json.loads(data.decode())
+
+                        wheel.update()
                     
                         if data.get("autosteer_status", False):
+                            if self.send_wheel_connect:
+                                self.wheel_disconnect = True
+                                self.send_wheel_connect = False
+
                             desired_rotation = data.get("desired_wheel_rotation", None)
 
                             if desired_rotation is not None:
@@ -93,8 +103,11 @@ class Server:
                         print(f"Error: {e}!")
                         print_exc()
 
+                    if data.get("recieved_wheel_connect"):
+                        self.send_wheel_connect = False
 
                     send_data["wheel_disconnect"] = self.wheel_disconnect
+                    send_data["wheel_connect"] = self.send_wheel_connect
 
                     conn.sendall(json.dumps(send_data).encode())
 

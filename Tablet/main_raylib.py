@@ -1,10 +1,11 @@
 import pyray as pr
 import json
 import socket
+import os
 
 from course import CourseManager
 
-from UI import Sidebar, Button
+from UI import Sidebar, Button, InfoBox
 from math import atan2, sin, cos, radians, degrees, dist, sqrt
 from threading import Thread
 from time import sleep
@@ -17,37 +18,50 @@ class Client:
         self.is_autosteer_engaged = is_autosteer_engaged
         self.get_desired_wheel_rotation = get_desired_wheel_rotation
 
+        self.connected = False
+
+        self.recieved_wheel_connect = False
+
     def run(self) -> None:
-        self.data = {}
+        while 1:
+            try:
+                self.data = {}
 
-        sleep(1)
+                sleep(1)
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((HOST, PORT))
-            print("Connected")
-            s.sendall(b'{}')
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.connect((HOST, PORT))
+                    print("Connected")
+                    self.connected = True
+                    s.sendall(b'{}')
 
-            while 1:
-                try:
-                    data = s.recv(1024)
-                    if not data:
-                        print("No data, leaving")
-                        break
+                    while 1:
+                        try:
+                            data = s.recv(1024)
+                            if not data:
+                                print("No data, leaving")
+                                break
 
-                    try:
-                        self.data = json.loads(data.decode())
-                    except Exception as e:
-                        print(f"Inner client try error: {e}")
+                            try:
+                                self.data = json.loads(data.decode())
+                            except Exception as e:
+                                print(f"Inner client try error: {e}")
 
-                    send_data = {
-                        "autosteer_status": self.is_autosteer_engaged(),
-                        "desired_wheel_rotation": self.get_desired_wheel_rotation()
-                    }
+                            send_data = {
+                                "autosteer_status": self.is_autosteer_engaged(),
+                                "desired_wheel_rotation": self.get_desired_wheel_rotation(),
+                                "recieved_wheel_connect": self.recieved_wheel_connect
+                            }
 
-                    s.sendall(json.dumps(send_data).encode())
+                            s.sendall(json.dumps(send_data).encode())
 
-                except Exception as e:
-                    print(f"Outer client try error: {e}")
+                            self.recieved_wheel_connect = False
+
+                        except Exception as e:
+                            print(f"Outer client try error: {e}")
+
+            except Exception as e:
+                print(f"Client error: {e}!")
 
 class Vehicle:
     def __init__(self) -> None:
@@ -82,23 +96,30 @@ class GPS:
         pr.init_window(self.WIDTH, self.HEIGHT, "TopconX35")
         pr.set_target_fps(60)
 
+        pr.init_audio_device()
+
+        self.infoboxes = []
+
+        self.working_width = 6
+        self.zoom = 8.0
+
+        self.course_manager = CourseManager(self.get_working_width)
+        
+        self.autosteer_engage_sound = pr.load_sound("assets/sounds/gpsEngage.mp3")
+        self.autosteer_disengage_sound = pr.load_sound("assets/sounds/gpsDisengage.ogg")
+
         self.camera = pr.Camera2D()
         self.camera.zoom = 1.0
         self.camera.rotation = 0.0
 
         self.paint_tex = pr.load_render_texture(16000, 16000)
 
+        self.load_map_information()
+
         self.vehicle = Vehicle()
         self.trailer = Trailer()
 
-        self.working_width = 6
-
-        self.zoom = 8.0
-        #self.zoom = 1.0
-
-        self.course_manager = CourseManager(self.get_working_width)
-
-        self.sidebar = Sidebar(self.is_autosteer_enabled, self.set_autosteer, self.set_ab, self.zoom_in, self.zoom_out)
+        self.sidebar = Sidebar(self.is_autosteer_enabled, self.set_autosteer, self.reset_paint, self.set_ab, self.nudge_runlines, self.save, self.zoom_in, self.zoom_out)
 
         self.main()
 
@@ -111,13 +132,70 @@ class GPS:
         return self.course_manager.autosteer_enabled
 
     def set_autosteer(self, enabled: bool) -> None:
+        if self.course_manager.autosteer_enabled and not enabled:
+            pr.play_sound(self.autosteer_disengage_sound)
+            self.infoboxes.append(InfoBox("Autosteer disengaged.", 'info', self.remove_infobox))
+        elif not self.course_manager.autosteer_enabled and enabled:
+            pr.play_sound(self.autosteer_engage_sound)
+            self.infoboxes.append(InfoBox("Autosteer engaged.", 'info', self.remove_infobox))
+
         self.course_manager.autosteer_enabled = enabled
 
     def get_desired_wheel_rotation(self) -> float | None:
         return self.course_manager.desired_wheel_rotation
 
+    def reset_paint(self) -> None:
+        self.paint_tex = pr.load_render_texture(16000, 16000)
+        self.infoboxes.append(InfoBox("Paint data reset!", 'warning', self.remove_infobox))
+
     def set_ab(self) -> None:
         self.course_manager.set_ab(self.vehicle.x, self.vehicle.y)
+
+        if self.course_manager.a_point is None:
+            self.infoboxes.append(InfoBox("B point set.", 'info', self.remove_infobox))
+        else:
+            self.infoboxes.append(InfoBox("A point set.", 'info', self.remove_infobox))
+
+    def nudge_runlines(self) -> None:
+        self.course_manager.nudge_runlines(pr.Vector2(self.vehicle.x, self.vehicle.y))
+        self.infoboxes.append(InfoBox("Runlines nudged to vehicle position.", 'info', self.remove_infobox))
+
+    def remove_infobox(self, infobox: InfoBox) -> None:
+        self.infoboxes.remove(infobox)
+
+    def load_map_information(self) -> None:
+        """
+        if os.path.isfile("paint.png"):
+            image = pr.load_image("paint.png")
+            texture = pr.load_texture_from_image(image)
+            pr.unload_image(image)
+
+            pr.begin_texture_mode(self.paint_tex)
+            pr.draw_texture(texture, 0, 0, pr.GREEN)
+            pr.end_texture_mode()
+        else:
+            print(f"Paint texture (paint.png) file doesn't exist! Previous paint data cleared.")
+            self.infoboxes.append(InfoBox("Paint texture file doesn't exist!", 'warning', self.remove_infobox))
+        """
+
+        if os.path.isfile("ab.txt"):
+            with open("ab.txt", "r") as f:
+                ab_dir, ab_offset = f.read().split(",")
+
+                self.course_manager.run_dir = float(ab_dir)
+                self.course_manager.run_offset = float(ab_offset)
+        else:
+            print(f"AB data file (ab.txt) doesn't exist! AB data reset.")
+            self.infoboxes.append(InfoBox("AB data file (ab.txt) doesn't exist!", 'warning', self.remove_infobox))
+
+    def save(self) -> None:
+        #image = pr.load_image_from_texture(self.paint_tex.texture)
+        #pr.export_image(image, "paint.png")
+
+        with open("ab.txt", "w") as f:
+            f.write(f"{self.course_manager.run_dir},{self.course_manager.run_offset}")
+
+        self.infoboxes.append(InfoBox("Data save successful!", 'info', self.remove_infobox))
 
     def update_vt_positions(self) -> None:
         self.vehicle.x = self.client.data.get('vx', 0) + 8000
@@ -235,6 +313,10 @@ class GPS:
 
             self.update_vt_positions()
 
+            if self.client.data.get("wheel_connect", False):
+                self.client.recieved_wheel_connect = True
+                self.set_autosteer(True)
+
             pr.draw_texture(self.paint_tex.texture, 0, 0, pr.GREEN)
 
             self.camera.target = pr.Vector2(self.vehicle.x, self.vehicle.y)  # World coords to follow
@@ -284,7 +366,13 @@ class GPS:
 
             pr.end_mode_2d()
 
+            if not self.client.connected and len(self.infoboxes) == 0:
+                self.infoboxes.append(InfoBox("No connection!", 'error', self.remove_infobox))
+
             self.sidebar.update()
+
+            for infobox in self.infoboxes:
+                infobox.update()
 
             pr.end_drawing()
 
@@ -293,6 +381,8 @@ class GPS:
                 self.set_autosteer(False)
 
             self.course_manager.update(self.client.data.get("wheel_rot", 0.0), pr.Vector2(self.vehicle.x, self.vehicle.y), self.vehicle.rad, self.working_width)
+
+        self.save()
 
 if __name__ == "__main__":
     GPS()

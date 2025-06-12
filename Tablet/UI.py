@@ -1,5 +1,7 @@
 import pyray as pr
 
+from time import time
+
 class Button:
     def __init__(self, image: pr.Texture, x: int, y: int, bg_color: pr.Color, bg_color_pressed: pr.Color, onclick: object) -> None:
         self.image = image
@@ -29,6 +31,51 @@ class Button:
 
         pr.draw_texture(self.image, self.x, self.y, pr.WHITE)
 
+class InfoBox:
+    DURATION = 5
+    AUDIO_DELAY = 1 # Delay before playing audio
+
+    WIDTH = 800
+    HEIGHT = 100
+
+    FONT_SIZE = 40
+
+    def __init__(self, text: str, info_type: str, remove_infobox: object) -> None:
+        self.screen_width = pr.get_screen_width()
+        self.screen_height = pr.get_screen_height()
+
+        self.text = text
+        self.start_time = time()
+
+        self.remove_infobox = remove_infobox
+        self.sound = pr.load_sound("assets/sounds/gpsAlert.ogg")
+        self.played_sound = False
+
+        self.info_type = info_type
+
+        if info_type == 'info':
+            self.color = pr.GREEN
+        elif info_type == 'warning':
+            self.color = pr.ORANGE
+        elif info_type == 'error':
+            self.color = pr.RED
+        else:
+            print("Error when making infobox! Error: No valid info_type specified.")
+            self.color = pr.PURPLE
+
+        self.text_width = pr.measure_text(self.text, self.FONT_SIZE)
+
+    def update(self) -> None:
+        if time() - self.start_time >= self.DURATION:
+            self.remove_infobox(self)
+            return
+        elif time() - self.start_time >= self.AUDIO_DELAY and not self.played_sound:
+            pr.play_sound(self.sound)
+            self.played_sound = True
+        
+        pr.draw_rectangle(int(self.screen_width / 2 - self.WIDTH / 2), 0, self.WIDTH, self.HEIGHT, self.color)
+        pr.draw_text(self.text, int(self.screen_width / 2 - self.text_width / 2), 30, self.FONT_SIZE, pr.WHITE)
+
 class Sidebar:
     ITEMS = ["paddock", "runline_select", "AB", "nudge", "runline_save", "zoom-in", "zoom-out", "wheel"]
 
@@ -37,13 +84,16 @@ class Sidebar:
 
     PADDING = 5
 
-    def __init__(self, is_autosteer_enabled: object, set_autosteer: object, set_ab: object, zoom_in: object, zoom_out: object) -> None:
+    def __init__(self, is_autosteer_enabled: object, set_autosteer: object, reset_paint: object, set_ab: object, nudge_runlines: object, save: object, zoom_in: object, zoom_out: object) -> None:
         self.screen_width = pr.get_screen_width()
         self.screen_height = pr.get_screen_height()
 
         self.is_autosteer_enabled = is_autosteer_enabled
         self.set_autosteer = set_autosteer
+        self.reset_paint = reset_paint
         self.set_ab = set_ab
+        self.nudge_runlines = nudge_runlines
+        self.save = save
 
         self.zoom_in = zoom_in
         self.zoom_out = zoom_out
@@ -76,7 +126,10 @@ class Sidebar:
         print(f"Button: {item} clicked!")
 
         match item:
+            case "paddock": self.reset_paint()
             case "AB": self.set_ab()
+            case "nudge": self.nudge_runlines()
+            case "runline_save": self.save()
             case "zoom-in": self.zoom_in()
             case "zoom-out": self.zoom_out()
             case "wheel": self.set_autosteer(not self.is_autosteer_enabled())
