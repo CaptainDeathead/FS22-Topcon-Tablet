@@ -34,6 +34,18 @@ class CourseManager:
         else:
             self.a_point = (x, y)
 
+    def nudge_runlines(self, vehicle_pos: pr.Vector2) -> None:
+        run_rad = math.radians(self.run_dir)
+
+        # Direction vector of the runline (D) and its perpendicular normal (N)
+        dir_vec = pr.Vector2(math.cos(run_rad), math.sin(run_rad))
+        normal_vec = pr.Vector2(-dir_vec.y, dir_vec.x)
+
+        # Project vehicle position onto the normal (how far the vehicle is offset from runline origin)
+        offset_from_origin = vehicle_pos.x * normal_vec.x + vehicle_pos.y * normal_vec.y
+
+        self.run_offset = offset_from_origin
+
     def get_rotation_angle_0_180(self, vehicle_rotation_rad, run_dir_deg):
         run_dir_rad = math.radians(run_dir_deg)
         runline_vec = (math.cos(run_dir_rad), math.sin(run_dir_rad))
