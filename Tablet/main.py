@@ -1,4 +1,5 @@
 import pyray as pr
+import pygame as pg # Only for window sizing
 import json
 import socket
 import os
@@ -9,7 +10,10 @@ from course import CourseManager
 from UI import Sidebar, Button, InfoBox
 from math import atan2, sin, cos, radians, degrees, dist, sqrt
 from threading import Thread
+from pynput import keyboard
 from time import sleep
+
+pg.init()
 
 HOST = '0.0.0.0'
 PORT = 5001
@@ -85,10 +89,13 @@ class Trailer:
         return radians(self.rotation)
 
 class GPS:
-    WIDTH = 1280
-    HEIGHT = 800
+    INFO = pg.display.Info()
+    WIDTH = INFO.current_w
+    HEIGHT = INFO.current_h
 
     WORKING_WIDTH_SCALE = 2.3 # Divide tool working width (m) by this to get scaled
+
+    PAINT_CYCLES = ((False, False), (True, False), (False, True), (True, True)) # (lowered, on) required
 
     def __init__(self) -> None:
         self.client = Client(self.is_autosteer_enabled, self.get_desired_wheel_rotation)
@@ -96,13 +103,26 @@ class GPS:
 
         pr.init_window(self.WIDTH, self.HEIGHT, "TopconX35")
         pr.set_target_fps(60)
+        pr.toggle_fullscreen()
 
         pr.init_audio_device()
+
+        icon = pr.load_image("logo.png")
+        pr.set_window_icon(icon)
+        pr.unload_image(icon)
+
+        self.keyboard_listener = keyboard.Listener(on_press=self.on_key_press, on_release=self.on_key_release)
+        self.keyboard_listener.setDaemon(True)
+        self.keyboard_listener.start()
+
+        self.pressed_keys = []
 
         self.infoboxes = []
 
         self.working_width = 6
         self.zoom = 8.0
+
+        self.paint_cycle_index = 3
 
         self.course_manager = CourseManager(self.get_working_width)
         
@@ -164,6 +184,44 @@ class GPS:
     def remove_infobox(self, infobox: InfoBox) -> None:
         self.infoboxes.remove(infobox)
 
+    def cycle_paint_requirements(self) -> None:
+        self.paint_cycle_index = (self.paint_cycle_index + 1) % len(self.PAINT_CYCLES)
+
+        on, lowered = self.PAINT_CYCLES[self.paint_cycle_index]
+
+        if not on and not lowered:
+            infobox_text = "always"
+        elif not on and lowered:
+            infobox_text = "when lowered"
+        elif on and not lowered:
+            infobox_text = "when on"
+        else:
+            infobox_text = "when on & lowered"
+
+        self.infoboxes.append(InfoBox(f"Paint requirements: {infobox_text}.", 'info', self.remove_infobox))
+
+    def on_key_press(self, key) -> None:
+        # Add key to the set
+        self.pressed_keys.append(key)
+
+        # Check for Ctrl + Shift + A
+        if (keyboard.Key.ctrl_l in self.pressed_keys or keyboard.Key.ctrl_r in self.pressed_keys) and \
+        (keyboard.Key.shift in self.pressed_keys or keyboard.Key.shift_r in self.pressed_keys): 
+            if key == keyboard.KeyCode.from_char('A'):
+                self.set_ab()
+            elif key == keyboard.KeyCode.from_char('N'):
+                self.nudge_runlines()
+            elif key == keyboard.KeyCode.from_char('R'):
+                self.cycle_paint_requirements()
+            elif key == keyboard.Key.enter:
+                self.set_autosteer(not self.is_autosteer_enabled())
+
+    def on_key_release(self, key) -> None:
+        try:
+            self.pressed_keys.remove(key)
+        except Exception as e:
+            print(f"Error when removing keys: {e}!")
+
     def load_map_information(self) -> None:
         """
         if os.path.isfile("paint.png"):
@@ -224,7 +282,9 @@ class GPS:
         on = self.client.data.get('on', False)
         lowered = self.client.data.get('lowered', True)
 
-        if on and lowered:
+        on_required, lower_required = self.PAINT_CYCLES[self.paint_cycle_index]
+
+        if (on or not on_required) and (lowered or not lower_required):
             return True
         else:
             return False
