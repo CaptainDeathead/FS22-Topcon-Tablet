@@ -17,6 +17,8 @@ class CourseManager:
 
         self.a_point = None
 
+        self.closest_runline = None
+
     @property
     def working_width(self) -> float: return self.get_working_width()
 
@@ -32,41 +34,6 @@ class CourseManager:
         else:
             self.a_point = (x, y)
 
-    def nudge_runlines(self, vehicle_pos: pr.Vector2) -> None:
-        run_rad = math.radians(self.run_dir)
-
-        # Direction vector of the runline (D) and its perpendicular normal (N)
-        dir_vec = pr.Vector2(math.cos(run_rad), math.sin(run_rad))
-        normal_vec = pr.Vector2(-dir_vec.y, dir_vec.x)
-
-        # Project vehicle position onto the normal (how far the vehicle is offset from runline origin)
-        offset_from_origin = vehicle_pos.x * normal_vec.x + vehicle_pos.y * normal_vec.y
-
-        self.run_offset = offset_from_origin
-
-    def get_closest_runline_position(self, vehicle_pos: pr.Vector2, working_width: float) -> pr.Vector2:
-        # 1. Convert run_dir (degrees) to radians
-        run_rad = math.radians(self.run_dir)
-
-        # 2. Direction vector of the runline (D) and its perpendicular normal (N)
-        dir_vec = pr.Vector2(math.cos(run_rad), math.sin(run_rad))  # D
-        normal_vec = pr.Vector2(-dir_vec.y, dir_vec.x)              # N = perpendicular to D
-
-        # 3. Project vehicle position onto normal to find offset from central line
-        offset_from_origin = vehicle_pos.x * normal_vec.x + vehicle_pos.y * normal_vec.y
-
-        # 4. Snap to nearest multiple of working width
-        snapped_offset = round(offset_from_origin / working_width) * working_width
-
-        # 5. Compute the position of the closest runline:
-        #    - Keep the projection along D
-        #    - Move to the snapped position along N
-        distance_along_dir = vehicle_pos.x * dir_vec.x + vehicle_pos.y * dir_vec.y
-        closest_x = dir_vec.x * distance_along_dir + normal_vec.x * snapped_offset
-        closest_y = dir_vec.y * distance_along_dir + normal_vec.y * snapped_offset
-
-        return pr.Vector2(closest_x, closest_y)
-    
     def get_rotation_angle_0_180(self, vehicle_rotation_rad, run_dir_deg):
         run_dir_rad = math.radians(run_dir_deg)
         runline_vec = (math.cos(run_dir_rad), math.sin(run_dir_rad))
@@ -79,45 +46,48 @@ class CourseManager:
         angle_diff_deg = math.degrees(angle_diff) - 90
         return angle_diff_deg
 
-    def get_dir_to_run(self, vehicle_pos: pr.Vector2, closest_runline: pr.Vector2, vehicle_rotation_rad: float):
-        # Vector from vehicle to runline
-        to_run_x = closest_runline.x - vehicle_pos.x
-        to_run_y = closest_runline.y - vehicle_pos.y
+    def get_side_of_line(self, A: pr.Vector2, B: pr.Vector2, P: pr.Vector2) -> int:
+        AB = pr.Vector2(B.x - A.x, B.y - A.y)
+        AP = pr.Vector2(P.x - A.x, P.y - A.y)
+        
+        cross = AB.x * AP.y - AB.y * AP.x
 
-        # Normalize to_run vector
-        length = math.hypot(to_run_x, to_run_y)
-        if length == 0:
-            return 0.0
-        to_run_x /= length
-        to_run_y /= length
+        if cross > 0:
+            return -1
+        elif cross < 0:
+            return 1
+        else:
+            return 0
 
-        # Vehicle heading vector
-        vehicle_vec_x = math.cos(vehicle_rotation_rad)
-        vehicle_vec_y = math.sin(vehicle_rotation_rad)
+    def get_closest_point_on_line(self, A: pr.Vector2, B: pr.Vector2, P: pr.Vector2) -> pr.Vector2:
+        AB = pr.Vector2(B.x - A.x, B.y - A.y)
+        AP = pr.Vector2(P.x - A.x, P.y - A.y)
 
-        # Compute signed angle difference using atan2(cross, dot)
-        dot = vehicle_vec_x * to_run_x + vehicle_vec_y * to_run_y
-        cross = vehicle_vec_x * to_run_y - vehicle_vec_y * to_run_x
+        ab_dot_ab = AB.x * AB.x + AB.y * AB.y
+        ap_dot_ab = AP.x * AB.x + AP.y * AB.y
 
-        angle_rad = math.atan2(cross, dot)
-        angle_deg = math.degrees(angle_rad) - 180
+        t = ap_dot_ab / ab_dot_ab
 
-        if angle_deg < 180:
-            angle_deg += 180
+        # Clamp to segment if needed
+        # t = max(0, min(1, t))  # Uncomment if you want the closest point on the SEGMENT
 
-        return angle_deg 
+        closest = pr.Vector2(A.x + AB.x * t, A.y + AB.y * t)
+        return closest
 
     def get_desired_rotation(self, wheel_rotation: float, vehicle_pos: pr.Vector2, vehicle_rotation: float, working_width: float) -> None:
+        if self.closest_runline is None: return
+
         vr = vehicle_rotation
 
         align_steer = self.get_rotation_angle_0_180(vehicle_rotation - math.pi, self.run_dir)
-        closest_runline = self.get_closest_runline_position(vehicle_pos, working_width)
 
-        dx = closest_runline.x - vehicle_pos.x
-        dy = closest_runline.y - vehicle_pos.y
+        closest_runline_point = self.get_closest_point_on_line(self.closest_runline[0], self.closest_runline[1], vehicle_pos)
+
+        dx = closest_runline_point.x - vehicle_pos.x
+        dy = closest_runline_point.y - vehicle_pos.y
 
         dist = math.hypot(dx, dy)
-        dir_to_run = atan2(dy, dx) / (math.pi / 2) * (dist / self.working_width)
+        side = self.get_side_of_line(self.closest_runline[0], self.closest_runline[1], vehicle_pos)
  
         rel_rot = degrees(vr) - self.run_dir - 90
         if rel_rot < 0: rel_rot += 360
@@ -127,8 +97,10 @@ class CourseManager:
         else:
             rel_rot = 1
 
-        dir_to_run *= rel_rot
+        side *= rel_rot
+
         align_steer /= 90 * rel_rot
+        dir_to_run = side * (dist / self.working_width)
 
         self.desired_wheel_rotation = (dir_to_run + align_steer)
 

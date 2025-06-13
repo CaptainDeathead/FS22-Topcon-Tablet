@@ -2,6 +2,7 @@ import pyray as pr
 import json
 import socket
 import os
+import sys
 
 from course import CourseManager
 
@@ -306,6 +307,9 @@ class GPS:
 
             pr.draw_line_ex(start, end, w * self.zoom, color)
 
+            if i == closest_line_index:
+                self.course_manager.closest_runline = (pr.Vector2(start[0], start[1]), pr.Vector2(end[0], end[1]))
+
     def main(self) -> None:
         while not pr.window_should_close():
             pr.begin_drawing()
@@ -386,4 +390,7 @@ class GPS:
         self.save()
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        HOST = sys.argv[1]
+
     GPS()
