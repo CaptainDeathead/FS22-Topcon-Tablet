@@ -312,6 +312,7 @@ class GPS:
             pr.clear_background((50, 50, 50))
 
             self.update_vt_positions()
+            self.working_width = self.client.data.get("work_width", self.working_width)
 
             if self.client.data.get("wheel_connect", False):
                 self.client.recieved_wheel_connect = True

@@ -85,7 +85,7 @@ class Wheel(G29):
                 closest_dist = dist
 
             if abs(dist - closest_dist) > self.DISCONNECT_DIFF:
-                print("Disconnect")
+                print("Disconnect by wheel")
                 self.on_wheel_disconnect()
                 break
 
