@@ -1,69 +1,87 @@
-import pygame as pg
+import pyray as pr
 import json
 import socket
+import os
 
-from math import atan2, sin, cos, radians, degrees
-from vehicle_trailer_simulation import Vehicle, Trailer
+from course import CourseManager
+
+from UI import Sidebar, Button, InfoBox
+from math import atan2, sin, cos, radians, degrees, dist, sqrt
 from threading import Thread
-
-pg.init()
+from time import sleep
 
 HOST = '0.0.0.0'
 PORT = 5001
 
 class Client:
-    def __init__(self) -> None:
-        ...
+    def __init__(self, is_autosteer_engaged: object, get_desired_wheel_rotation: float | None) -> None:
+        self.is_autosteer_engaged = is_autosteer_engaged
+        self.get_desired_wheel_rotation = get_desired_wheel_rotation
+
+        self.connected = False
+
+        self.recieved_wheel_connect = False
 
     def run(self) -> None:
-        self.data = {}
+        while 1:
+            try:
+                self.data = {}
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((HOST, PORT))
-            print("Connected")
-            s.sendall(b"Connected")
+                sleep(1)
 
-            while 1:
-                try:
-                    data = s.recv(1024)
-                    if not data:
-                        break
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.connect((HOST, PORT))
+                    print("Connected")
+                    self.connected = True
+                    s.sendall(b'{}')
 
-                    try:
-                        self.data = json.loads(data.decode())
-                    except Exception as e:
-                        print(e)
+                    while 1:
+                        try:
+                            data = s.recv(1024)
+                            if not data:
+                                print("No data, leaving")
+                                break
 
-                    s.sendall(b"Here")
-                except Exception as e:
-                    print(e)
+                            try:
+                                self.data = json.loads(data.decode())
+                            except Exception as e:
+                                print(f"Inner client try error: {e}")
 
-class Toggle:
-    def __init__(self, screen: pg.Surface, x: int, y: int, text: str, on: bool) -> None:
-        self.screen = screen
-        self.x = x
-        self.y = y
-        self.text = text
+                            send_data = {
+                                "autosteer_status": self.is_autosteer_engaged(),
+                                "desired_wheel_rotation": self.get_desired_wheel_rotation(),
+                                "recieved_wheel_connect": self.recieved_wheel_connect
+                            }
 
-        self.on = on
+                            s.sendall(json.dumps(send_data).encode())
 
-        font = pg.font.SysFont(None, 40)
-        self.font_surface = font.render(self.text, True, (255, 255, 255))
+                            self.recieved_wheel_connect = False
 
-        self.rect = pg.Rect(self.x, self.y, self.font_surface.width + 40, 20)
+                        except Exception as e:
+                            print(f"Outer client try error: {e}")
 
-    def toggle(self) -> None:
-        self.on = not self.on
+            except Exception as e:
+                print(f"Client error: {e}!")
 
-    def draw(self) -> None:
-        self.screen.blit(self.font_surface, (self.x, self.y))
-        
-        if self.on:
-            pg.draw.rect(self.screen, (0, 255, 0), (self.x + self.font_surface.width, 0, 40, 20))
-            pg.draw.rect(self.screen, (0, 0, 255), (self.x + self.font_surface.width + 35, 0, 10, 20))
-        else:
-            pg.draw.rect(self.screen, (255, 0, 0), (self.x + self.font_surface.width, 0, 40, 20))
-            pg.draw.rect(self.screen, (0, 0, 255), (self.x + self.font_surface.width - 5, 0, 10, 20))
+class Vehicle:
+    def __init__(self) -> None:
+        self.x = 0.0
+        self.y = 0.0
+        self.rotation = 0.0
+    
+    @property
+    def rad(self) -> float:
+        return radians(self.rotation)
+
+class Trailer:
+    def __init__(self) -> None:
+        self.x = 0.0
+        self.y = 0.0
+        self.rotation = 0.0
+
+    @property
+    def rad(self) -> float:
+        return radians(self.rotation)
 
 class GPS:
     WIDTH = 1280
@@ -72,40 +90,112 @@ class GPS:
     WORKING_WIDTH_SCALE = 2.3 # Divide tool working width (m) by this to get scaled
 
     def __init__(self) -> None:
-        self.client = Client()
+        self.client = Client(self.is_autosteer_enabled, self.get_desired_wheel_rotation)
         Thread(target=self.client.run, daemon=True).start()
 
-        self.screen = pg.display.set_mode((self.WIDTH, self.HEIGHT)) 
-        pg.display.set_caption("TopConX35")
+        pr.init_window(self.WIDTH, self.HEIGHT, "TopconX35")
+        pr.set_target_fps(60)
 
-        self.clock = pg.time.Clock()
+        pr.init_audio_device()
 
-        self.vehicle = Vehicle((0, 0), 0, 10)
-        self.trailer = Trailer(self.vehicle, (0, 40), 0, 0)
+        self.infoboxes = []
 
-        self.paint_surface = pg.Surface((16000, 16000)).convert()
-        self.paint_surface.fill((120, 120, 120))
+        self.working_width = 6
+        self.zoom = 8.0
 
-        self.working_width = 2.5
+        self.course_manager = CourseManager(self.get_working_width)
+        
+        self.autosteer_engage_sound = pr.load_sound("assets/sounds/gpsEngage.mp3")
+        self.autosteer_disengage_sound = pr.load_sound("assets/sounds/gpsDisengage.ogg")
 
-        self.zoom_in_img = pg.transform.smoothscale_by(pg.image.load("zoom-in.png"), 0.5).convert_alpha()
-        self.zoom_in_rect = pg.Rect(self.WIDTH - 200, 0, self.zoom_in_img.width, self.zoom_in_img.height)
+        self.camera = pr.Camera2D()
+        self.camera.zoom = 1.0
+        self.camera.rotation = 0.0
 
-        self.zoom_out_img = pg.transform.smoothscale_by(pg.image.load("zoom-out.png"), 0.5).convert_alpha()
-        self.zoom_out_rect = pg.Rect(self.WIDTH - 200 - self.zoom_out_img.width - 20, 0, self.zoom_in_img.width, self.zoom_in_img.height)
+        self.paint_tex = pr.load_render_texture(16000, 16000)
 
-        self.set_working_width_btn = pg.font.SysFont(None, 60).render("<->", True, (0, 0, 0), (200, 200, 200))
-        self.set_working_width_rect = pg.Rect(20, 0, self.set_working_width_btn.width, self.set_working_width_btn.height)
+        self.load_map_information()
 
-        self.lower_required_toggle = Toggle(self.screen, 200, 0, "Lower Required: ", True)
-        self.on_required_toggle = Toggle(self.screen, 500, 0, "Active Required: ", True)
+        self.vehicle = Vehicle()
+        self.trailer = Trailer()
 
-        self.zoom = 5
-
-        self.buffer = pg.Surface((self.WIDTH, self.HEIGHT)).convert()
-        self.buffer_rotate = pg.Surface((self.WIDTH, self.HEIGHT)).convert()
+        self.sidebar = Sidebar(self.is_autosteer_enabled, self.set_autosteer, self.reset_paint, self.set_ab, self.nudge_runlines, self.save, self.zoom_in, self.zoom_out)
 
         self.main()
+
+        pr.close_window()
+
+    def get_working_width(self) -> float:
+        return self.working_width
+
+    def is_autosteer_enabled(self) -> bool:
+        return self.course_manager.autosteer_enabled
+
+    def set_autosteer(self, enabled: bool) -> None:
+        if self.course_manager.autosteer_enabled and not enabled:
+            pr.play_sound(self.autosteer_disengage_sound)
+            self.infoboxes.append(InfoBox("Autosteer disengaged.", 'info', self.remove_infobox))
+        elif not self.course_manager.autosteer_enabled and enabled:
+            pr.play_sound(self.autosteer_engage_sound)
+            self.infoboxes.append(InfoBox("Autosteer engaged.", 'info', self.remove_infobox))
+
+        self.course_manager.autosteer_enabled = enabled
+
+    def get_desired_wheel_rotation(self) -> float | None:
+        return self.course_manager.desired_wheel_rotation
+
+    def reset_paint(self) -> None:
+        self.paint_tex = pr.load_render_texture(16000, 16000)
+        self.infoboxes.append(InfoBox("Paint data reset!", 'warning', self.remove_infobox))
+
+    def set_ab(self) -> None:
+        self.course_manager.set_ab(self.vehicle.x, self.vehicle.y)
+
+        if self.course_manager.a_point is None:
+            self.infoboxes.append(InfoBox("B point set.", 'info', self.remove_infobox))
+        else:
+            self.infoboxes.append(InfoBox("A point set.", 'info', self.remove_infobox))
+
+    def nudge_runlines(self) -> None:
+        self.course_manager.nudge_runlines(pr.Vector2(self.vehicle.x, self.vehicle.y))
+        self.infoboxes.append(InfoBox("Runlines nudged to vehicle position.", 'info', self.remove_infobox))
+
+    def remove_infobox(self, infobox: InfoBox) -> None:
+        self.infoboxes.remove(infobox)
+
+    def load_map_information(self) -> None:
+        """
+        if os.path.isfile("paint.png"):
+            image = pr.load_image("paint.png")
+            texture = pr.load_texture_from_image(image)
+            pr.unload_image(image)
+
+            pr.begin_texture_mode(self.paint_tex)
+            pr.draw_texture(texture, 0, 0, pr.GREEN)
+            pr.end_texture_mode()
+        else:
+            print(f"Paint texture (paint.png) file doesn't exist! Previous paint data cleared.")
+            self.infoboxes.append(InfoBox("Paint texture file doesn't exist!", 'warning', self.remove_infobox))
+        """
+
+        if os.path.isfile("ab.txt"):
+            with open("ab.txt", "r") as f:
+                ab_dir, ab_offset = f.read().split(",")
+
+                self.course_manager.run_dir = float(ab_dir)
+                self.course_manager.run_offset = float(ab_offset)
+        else:
+            print(f"AB data file (ab.txt) doesn't exist! AB data reset.")
+            self.infoboxes.append(InfoBox("AB data file (ab.txt) doesn't exist!", 'warning', self.remove_infobox))
+
+    def save(self) -> None:
+        #image = pr.load_image_from_texture(self.paint_tex.texture)
+        #pr.export_image(image, "paint.png")
+
+        with open("ab.txt", "w") as f:
+            f.write(f"{self.course_manager.run_dir},{self.course_manager.run_offset}")
+
+        self.infoboxes.append(InfoBox("Data save successful!", 'info', self.remove_infobox))
 
     def update_vt_positions(self) -> None:
         self.vehicle.x = self.client.data.get('vx', 0) + 8000
@@ -129,167 +219,171 @@ class GPS:
         qy = oy + sin(angle) * (px - ox) + cos(angle) * (py - oy)
         return qx, qy
 
-    def rotate_image_centered(self, image: pg.Surface, angle: float, x: float, y: float) -> tuple[pg.Surface, pg.Rect]:
-        rotated_image = pg.transform.rotate(image, angle)
-        new_rect = rotated_image.get_rect(center=(x, y))
-
-        return rotated_image, new_rect
-
     def get_working(self) -> bool:
         on = self.client.data.get('on', False)
         lowered = self.client.data.get('lowered', True)
 
-        if self.on_required_toggle.on == on and self.lower_required_toggle.on == lowered:
+        if on and lowered:
             return True
         else:
             return False
 
-    def get_working_color(self) -> pg.Color:
+    def get_working_color(self) -> pr.Color:
         working = self.get_working()
 
-        if working: return (0, 255, 0)
-        else: return (255, 0, 0)
+        if working: return pr.Color(0, 150, 0, 128)
+        else: return pr.Color(255, 0, 0, 255)
 
     def zoom_in(self) -> None:
-        self.zoom = min(8, self.zoom + 1)
+        self.zoom = min(16, self.zoom * 1.5)
     
     def zoom_out(self) -> None:
-        self.zoom = max(1, self.zoom - 1)
+        self.zoom = max(0.3, self.zoom / 1.5)
 
-    def show_set_working_width_popup(self) -> None:
-        width_font = pg.font.SysFont(None, 40)
-        width_text = "0"
-        width_text_height = 100
+    def draw_rotated_line(self, start: pr.Vector2, length: float, angle_deg: float, thickness: float, color, offset: float = 0.0) -> None:
+        angle_rad = radians(angle_deg)
 
-        numpad_font = pg.font.SysFont(None, 30)
-        button_rect = pg.Rect(0, 0, 60, 40)
-        numpad = [['7', '8', '9'],
-                  ['4', '5', '6'],
-                  ['1', '2', '3'],
-                  ['CLR', '0', 'OK'],
-                  ['-', '.', '-']]
+        # Perpendicular offset (rotate angle 90° counter-clockwise for left)
+        offset_x = -sin(angle_rad) * offset
+        offset_y = cos(angle_rad) * offset
 
-        numpad_rect = pg.Rect(0, 0, button_rect.w * len(numpad[0]), button_rect.h * len(numpad))
+        # Apply offset to the start position
+        offset_start = pr.Vector2(start.x + offset_x, start.y + offset_y)
 
-        popup_width = 20 + numpad_rect.w + 20
-        popup_height = 20 + width_text_height + numpad_rect.h + 20
-        popup_rect = pg.Rect(self.WIDTH // 2 - popup_width / 2, self.HEIGHT // 2 - popup_height // 2, popup_width, popup_height)
+        end = pr.Vector2(
+            offset_start.x + cos(angle_rad) * length,
+            offset_start.y + sin(angle_rad) * length
+        )
 
-        button_rects = [[pg.Rect(popup_rect.x + 20 + x * (button_rect.w + 5), popup_rect.y + y * (button_rect.h + 5), button_rect.w, button_rect.h) for x in range(len(numpad[0]))] for y in range(len(numpad))]
+        pr.draw_line_ex(offset_start, end, thickness, color)
 
-        while 1:
-            dt = self.clock.tick(60)
+    def is_multiple(self, x: int, y: float, epsilon: float = 0.1) -> bool:
+        remainder = x % y
+        return remainder < epsilon or abs(remainder - y) < epsilon
 
-            for event in pg.event.get():
-                if event.type == pg.QUIT:
-                    pg.quit()
-                    exit()
+    def draw_runlines(self) -> None:
+        vehicle_pos = pr.Vector2(self.vehicle.x, self.vehicle.y)
+        run_dir = self.course_manager.run_dir
+        offset = self.course_manager.run_offset
 
-                elif event.type == pg.MOUSEBUTTONDOWN:
-                    for y in range(len(numpad)):
-                        for x in range(len(numpad[y])):
-                            button_rect = button_rects[y][x].copy()
-                            button_rect.y += width_text_height
+        # Convert angle to radians and get driving direction vector
+        angle_rad = radians(run_dir)
+        dir_vec = (cos(angle_rad), sin(angle_rad))
+        
+        # Get perpendicular vector (line direction)
+        line_vec = (-dir_vec[1], dir_vec[0])
 
-                            if button_rect.collidepoint(event.pos):
-                                if numpad[y][x] == 'CLR':
-                                    width_text = "0"
-                                elif numpad[y][x] == 'OK':
-                                    try:
-                                        self.working_width = float(width_text) / self.WORKING_WIDTH_SCALE
-                                        return
-                                    except:
-                                        width_text = "0"
-                                elif numpad[y][x] == '-': continue
-                                else:
-                                    if width_text == "0":
-                                        width_text = numpad[y][x]
-                                    else:
-                                        width_text += numpad[y][x]
+        # Project vehicle position onto line direction to find its offset
+        vehicle_offset = vehicle_pos.x * line_vec[0] + vehicle_pos.y * line_vec[1]
 
-            pg.draw.rect(self.screen, (200, 200, 200), popup_rect)
+        # Compute index of closest runline to the vehicle
+        rel_offset = vehicle_offset - offset
+        closest_line_index = round(rel_offset / self.working_width)
 
-            width_view = width_font.render(width_text, True, (0, 0, 0))
-            self.screen.blit(width_view, (popup_rect.centerx - width_view.width / 2, popup_rect.y + 20))
+        #num_lines = 50
+        num_lines = int((self.WIDTH / self.working_width) / 2) + 5
 
-            for y in range(len(numpad)):
-                for x in range(len(numpad[y])):
-                    if numpad[y][x] == "-": continue
+        # Draw 3 runlines: closest, one before, one after
+        for i in range(closest_line_index - num_lines + 1, closest_line_index + num_lines):
+            runline_offset = offset + i * self.working_width
+            x = line_vec[0] * runline_offset
+            y = line_vec[1] * runline_offset
 
-                    button_rect = button_rects[y][x].copy()
-                    button_rect.y += width_text_height
+            # Generate long line along driving direction
+            length = 100000
+            dx = dir_vec[0] * length
+            dy = dir_vec[1] * length
 
-                    pg.draw.rect(self.screen, (255, 255, 255), button_rect)
-                    self.screen.blit(numpad_font.render(numpad[y][x], True, (0, 0, 0)), button_rect)
+            start = (x - dx, y - dy)
+            end = (x + dx, y + dy)
 
-            pg.display.update(popup_rect)
+            w = 0.04
+            color = pr.Color(255, 0, 0, 255)
+
+            if i != closest_line_index:
+                w = 0.02
+                color = pr.Color(200, 0, 0, 128)
+
+            pr.draw_line_ex(start, end, w * self.zoom, color)
 
     def main(self) -> None:
-        while 1:
-            dt = self.clock.tick(30)
-            self.screen.fill((120, 120, 120))
-            self.buffer_rotate.fill((120, 120, 120))
-
-            for event in pg.event.get():
-                if event.type == pg.QUIT:
-                    pg.quit()
-                    exit()
-                elif event.type == pg.MOUSEBUTTONDOWN:
-                    if self.zoom_in_rect.collidepoint(event.pos):
-                        self.zoom_in()
-                    elif self.zoom_out_rect.collidepoint(event.pos):
-                        self.zoom_out()
-                    elif self.set_working_width_rect.collidepoint(event.pos):
-                        self.show_set_working_width_popup()
-
-                    elif self.lower_required_toggle.rect.collidepoint(event.pos):
-                        self.lower_required_toggle.toggle()
-                    elif self.on_required_toggle.rect.collidepoint(event.pos):
-                        self.on_required_toggle.toggle()
+        while not pr.window_should_close():
+            pr.begin_drawing()
+            pr.clear_background((50, 50, 50))
 
             self.update_vt_positions()
+            self.working_width = self.client.data.get("work_width", self.working_width)
 
-            self.buffer.blit(self.paint_surface, (-self.vehicle.x + self.WIDTH / 2, - self.vehicle.y + self.HEIGHT / 2))
-            new_buffer = pg.transform.smoothscale_by(self.buffer, self.zoom)
+            pr.draw_texture(self.paint_tex.texture, 0, 0, pr.GREEN)
 
-            self.buffer_rotate.blit(new_buffer, (self.WIDTH / 2 - new_buffer.width / 2, self.HEIGHT / 2 - new_buffer.height / 2))
+            self.camera.target = pr.Vector2(self.vehicle.x, self.vehicle.y)  # World coords to follow
+            self.camera.offset = pr.Vector2(self.WIDTH / 2, self.HEIGHT / 2 + self.HEIGHT / 4)  # Keep centered on screen
+            self.camera.zoom = self.zoom
+            self.camera.rotation = -self.vehicle.rotation
 
-            poly_left = self.rotate((self.WIDTH / 2, self.HEIGHT / 2), (self.WIDTH / 2 - 2 * self.zoom, self.HEIGHT / 2 + 3 * self.zoom), radians(self.vehicle.rotation))
-            poly_top = self.rotate((self.WIDTH / 2, self.HEIGHT / 2), (self.WIDTH / 2, self.HEIGHT / 2 - 3 * self.zoom), radians(self.vehicle.rotation))
-            poly_right = self.rotate((self.WIDTH / 2, self.HEIGHT / 2), (self.WIDTH / 2 + 2 * self.zoom, self.HEIGHT / 2 + 3 * self.zoom), radians(self.vehicle.rotation))
+            pr.begin_mode_2d(self.camera)
 
-            pg.draw.polygon(self.buffer_rotate, (0, 255, 0), [poly_left, poly_top, poly_right])
+            pr.draw_texture(self.paint_tex.texture, 0, 0, pr.GREEN)
 
-            origin = self.rotate((self.WIDTH / 2, self.HEIGHT / 2), (self.WIDTH / 2, self.HEIGHT / 2 + 3 * self.zoom), radians(self.vehicle.rotation))
+            self.draw_runlines()
 
-            relative_rotation = self.trailer.rotation
+            poly_left = self.rotate((self.vehicle.x, self.vehicle.y), (self.vehicle.x - 2.5, self.vehicle.y), self.vehicle.rad)
+            poly_top = self.rotate((self.vehicle.x, self.vehicle.y), (self.vehicle.x, self.vehicle.y - 5), self.vehicle.rad)
+            poly_right = self.rotate((self.vehicle.x, self.vehicle.y), (self.vehicle.x + 2.5, self.vehicle.y), self.vehicle.rad)
 
-            trailer_left = self.rotate(origin, (origin[0] - self.working_width * self.zoom, origin[1] + 3 * self.zoom), radians(relative_rotation))
-            trailer_right = self.rotate(origin, (origin[0] + self.working_width * self.zoom, origin[1] + 3 * self.zoom), radians(relative_rotation))
+            pr.draw_triangle(
+                pr.Vector2(poly_left[0], poly_left[1]),
+                pr.Vector2(poly_right[0], poly_right[1]),
+                pr.Vector2(poly_top[0], poly_top[1]),
+                pr.GREEN
+            )
 
-            pg.draw.line(self.buffer_rotate, (0, 0, 0), origin, ((trailer_left[0] + trailer_right[0])/2, (trailer_left[1] + trailer_right[1])/2))
-            pg.draw.line(self.buffer_rotate, self.get_working_color(), trailer_left, trailer_right)
+            origin = (self.vehicle.x, self.vehicle.y + dist((self.vehicle.x, self.vehicle.y), (self.trailer.x, self.trailer.y)) / 2)
+            origin_front = (self.vehicle.x, self.vehicle.y - 10)
+
+            rot_origin = self.rotate((self.vehicle.x, self.vehicle.y), origin, self.vehicle.rad)
+            rot_origin_front = self.rotate((self.vehicle.x, self.vehicle.y), origin_front, self.vehicle.rad)
+
+            trailer_left = self.rotate(rot_origin, (rot_origin[0] - self.working_width / 2, rot_origin[1]), self.trailer.rad)
+            trailer_right = self.rotate(rot_origin, (rot_origin[0] + self.working_width / 2, rot_origin[1]), self.trailer.rad)
+
+            # Blue guideline
+            #pr.draw_line_ex((self.vehicle.x, self.vehicle.y), rot_origin_front, 1, pr.DARKBLUE)
+
+            pr.draw_line_ex((self.vehicle.x, self.vehicle.y), (rot_origin[0], rot_origin[1]), 0.5, pr.BLACK)
+
+            color = self.get_working_color()
+            color.a = 255
+            pr.draw_line_ex((int(trailer_left[0]), int(trailer_left[1])), (int(trailer_right[0]), int(trailer_right[1])), 1.5, color)
 
             if self.get_working():
-                real_origin = self.trailer.position
-                real_trailer_left = self.rotate(real_origin, (real_origin[0] - self.working_width, real_origin[1]), radians(self.trailer.rotation))
-                real_trailer_right = self.rotate(real_origin, (real_origin[0] + self.working_width, real_origin[1]), radians(self.trailer.rotation))
+                pr.begin_texture_mode(self.paint_tex)
+                pr.draw_line_ex((int(trailer_left[0]), 16000 - int(trailer_left[1])), (int(trailer_right[0]), 16000 - int(trailer_right[1])), 1.5, self.get_working_color())
+                pr.end_texture_mode()
 
-                pg.draw.line(self.paint_surface, self.get_working_color(), real_trailer_left, real_trailer_right, width=5)
+            pr.end_mode_2d()
 
-            img, rect = self.rotate_image_centered(self.buffer_rotate, self.vehicle.rotation, self.WIDTH / 2, self.HEIGHT / 2)
-            self.screen.blit(img, rect)
+            if not self.client.connected and len(self.infoboxes) == 0:
+                self.infoboxes.append(InfoBox("No connection!", 'error', self.remove_infobox))
 
-            self.screen.blit(self.zoom_in_img, self.zoom_in_rect)
-            self.screen.blit(self.zoom_out_img, self.zoom_out_rect)
-            self.screen.blit(self.set_working_width_btn, self.set_working_width_rect)
+            self.sidebar.update()
 
-            self.lower_required_toggle.draw()
-            self.on_required_toggle.draw()
+            for infobox in self.infoboxes:
+                infobox.update()
 
-            pg.display.set_caption(str(self.clock.get_fps()))
+            pr.end_drawing()
 
-            pg.display.flip()
+            if self.client.data.get("wheel_connect", False):
+                self.client.recieved_wheel_connect = True
+                self.set_autosteer(True)
+
+            elif self.client.data.get("wheel_disconnect", False):
+                print("Recieved wheel disconnect...")
+                self.set_autosteer(False)
+
+            self.course_manager.update(self.client.data.get("wheel_rot", 0.0), pr.Vector2(self.vehicle.x, self.vehicle.y), self.vehicle.rad, self.working_width)
+
+        self.save()
 
 if __name__ == "__main__":
     GPS()

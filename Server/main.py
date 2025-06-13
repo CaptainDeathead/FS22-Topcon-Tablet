@@ -81,12 +81,11 @@ class Server:
                         data = json.loads(data.decode())
 
                         wheel.update()
+
+                        if data.get("recieved_wheel_connect"):
+                            self.send_wheel_connect = False
                     
                         if data.get("autosteer_status", False):
-                            if self.send_wheel_connect:
-                                self.wheel_disconnect = True
-                                self.send_wheel_connect = False
-
                             desired_rotation = data.get("desired_wheel_rotation", None)
 
                             if desired_rotation is not None:
@@ -102,9 +101,6 @@ class Server:
                     except Exception as e:
                         print(f"Error: {e}!")
                         print_exc()
-
-                    if data.get("recieved_wheel_connect"):
-                        self.send_wheel_connect = False
 
                     send_data["wheel_disconnect"] = self.wheel_disconnect
                     send_data["wheel_connect"] = self.send_wheel_connect
