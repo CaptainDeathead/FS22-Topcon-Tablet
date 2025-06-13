@@ -6,6 +6,8 @@
     <author>CaptainDeathead</author>
     <version>1.0.0.0</version>
 
+    <multiplayer supported="true"/>
+
     <extraSourceFiles>
         <sourceFile filename="script.lua"/>
     </extraSourceFiles>
