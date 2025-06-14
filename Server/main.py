@@ -1,8 +1,10 @@
 import time
 import json
 import socket
+import os
 
 from traceback import print_exc
+from copy import deepcopy
 from threading import Thread
 from g29 import Wheel
 
@@ -25,28 +27,44 @@ class DataManager:
         print(vehicle_pos, tool_pos, on, lowered, width)
 
     def run(self) -> None:
-        with open(self.log_path, "r") as file:
-            # Go to the end of the file
-            file.seek(0, 2)
+        print("Watching log.txt for GPS updates...\n")
 
-            print("Watching log.txt for GPS updates...\n")
-            while True:
-                try:
-                    line = file.readline()
-                    if not line:
-                        time.sleep(0.1)
-                        continue
-                    if self.gps_keyword in line:
-                        data = "{" + line.split("{")[1].replace("'", '"')
-                        #print(data)
-                        self.curr_data = data
-                except Exception as e:
-                    print(f"{e}! Continuing...")
+        last_inode = None
+
+        while True:
+            try:
+                with open(self.log_path, "r") as file:
+                    file.seek(0, 2)  # Go to the end of the file
+                    last_inode = os.fstat(file.fileno()).st_ino
+
+                    while True:
+                        # Check if file was rotated or replaced
+                        current_inode = os.stat(self.log_path).st_ino
+                        if current_inode != last_inode:
+                            print("Log file rotated/replaced. Reopening...")
+                            break  # Exit inner loop and reopen
+
+                        line = file.readline()
+
+                        if not line:
+                            file.seek(0, 1)  # HACK: force buffer refresh
+                            time.sleep(0.1)
+                            continue
+
+                        if self.gps_keyword in line:
+                            data = "{" + line.split("{", 1)[1].replace("'", '"').replace("nil", "null")
+                            self.curr_data = data
+
+            except Exception as e:
+                print(f"{e}! Continuing...")
+                time.sleep(1)  # Avoid spamming errors
 
 class Server:
     def __init__(self) -> None:
         self.wheel_disconnect = False
         self.send_wheel_connect = False
+
+        self.wheel_supported = False
 
     def on_wheel_disconnect(self) -> None:
         self.wheel_disconnect = True
@@ -57,7 +75,13 @@ class Server:
     def run(self, data_manager) -> None:
         Thread(target=data_manager.run, daemon=True).start()
 
-        wheel = Wheel(self.on_wheel_disconnect, self.on_connect_pressed)
+        try:
+            wheel = Wheel(self.on_wheel_disconnect, self.on_connect_pressed)
+            self.wheel_supported = True
+            print("Wheel support enabled.")
+
+        except Exception as e:
+            print(f"Error while initializing G29 support! Error: {e}! Autosteer will no longer be available because of this.")
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -75,7 +99,13 @@ class Server:
                     if not data:
                         break
 
-                    send_data = json.loads(data_manager.curr_data)
+                    try:
+                        send_data = deepcopy(json.loads(data_manager.curr_data))
+                    except Exception as e:
+                        print_exc()
+                        print(f"Error while Loading re-transmit data (shown above): {e}")
+                        print(f"Offending json:")
+                        print(send_data)
 
                     try:
                         data = json.loads(data.decode())
@@ -85,7 +115,7 @@ class Server:
                         if data.get("recieved_wheel_connect"):
                             self.send_wheel_connect = False
                     
-                        if data.get("autosteer_status", False):
+                        if data.get("autosteer_status", False) and self.wheel_supported:
                             desired_rotation = data.get("desired_wheel_rotation", None)
 
                             if desired_rotation is not None:

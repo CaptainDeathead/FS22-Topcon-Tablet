@@ -67,6 +67,7 @@ class Client:
 
             except Exception as e:
                 print(f"Client error: {e}!")
+                self.connected = False
 
 class Vehicle:
     def __init__(self) -> None:
@@ -93,7 +94,7 @@ class GPS:
     WIDTH = INFO.current_w
     HEIGHT = INFO.current_h
 
-    WORKING_WIDTH_SCALE = 2.3 # Divide tool working width (m) by this to get scaled
+    DEFAULT_WORK_WIDTH = 6
 
     PAINT_CYCLES = ((False, False), (True, False), (False, True), (True, True)) # (lowered, on) required
 
@@ -323,6 +324,8 @@ class GPS:
         return remainder < epsilon or abs(remainder - y) < epsilon
 
     def draw_runlines(self) -> None:
+        if self.working_width == 0: self.working_width = self.DEFAULT_WORK_WIDTH
+
         vehicle_pos = pr.Vector2(self.vehicle.x, self.vehicle.y)
         run_dir = self.course_manager.run_dir
         offset = self.course_manager.run_offset
@@ -410,6 +413,9 @@ class GPS:
 
             trailer_left = self.rotate(rot_origin, (rot_origin[0] - self.working_width / 2, rot_origin[1]), self.trailer.rad)
             trailer_right = self.rotate(rot_origin, (rot_origin[0] + self.working_width / 2, rot_origin[1]), self.trailer.rad)
+
+            trailer_left = (int(round(trailer_left[0], 0)), int(round(trailer_left[1], 0)))
+            trailer_right = (int(round(trailer_right[0], 0)), int(round(trailer_right[1], 0)))
 
             # Blue guideline
             #pr.draw_line_ex((self.vehicle.x, self.vehicle.y), rot_origin_front, 1, pr.DARKBLUE)
