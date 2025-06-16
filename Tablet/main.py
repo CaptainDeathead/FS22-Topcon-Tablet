@@ -6,6 +6,8 @@ import os
 import sys
 
 from course import CourseManager
+from shapely.geometry import Polygon, LineString
+from shapely.ops import unary_union
 
 from UI import Sidebar, Button, InfoBox
 from math import atan2, sin, cos, radians, degrees, dist, sqrt
@@ -97,11 +99,13 @@ class GPS:
     DEFAULT_WORK_WIDTH = 6
 
     PAINT_CYCLES = ((False, False), (True, False), (False, True), (True, True)) # (lowered, on) required
+    GRID_SQUARE_SIZE = 100
 
     def __init__(self) -> None:
         self.client = Client(self.is_autosteer_enabled, self.get_desired_wheel_rotation)
         Thread(target=self.client.run, daemon=True).start()
 
+        pr.set_config_flags(pr.ConfigFlags.FLAG_MSAA_4X_HINT)
         pr.init_window(self.WIDTH, self.HEIGHT, "TopconX35")
         pr.set_target_fps(60)
         pr.toggle_fullscreen()
@@ -117,7 +121,6 @@ class GPS:
         self.keyboard_listener.start()
 
         self.pressed_keys = []
-
         self.infoboxes = []
 
         self.load_settings()
@@ -137,6 +140,18 @@ class GPS:
         self.camera.rotation = 0.0
 
         self.paint_tex = pr.load_render_texture(16000, 16000)
+        
+        """
+        grid_vectors layout:
+        {
+            -8: {
+                -1: {
+                    [(..., ...),]
+                }
+            }
+        }
+        """
+        self.grid_vectors = {}
 
         self.load_map_information()
 
@@ -337,6 +352,24 @@ class GPS:
         remainder = x % y
         return remainder < epsilon or abs(remainder - y) < epsilon
 
+    def get_deep_size(self, obj: object, seen=None):
+        if seen is None:
+            seen = set()
+        obj_id = id(obj)
+        if obj_id in seen:
+            return 0
+        seen.add(obj_id)
+        size = sys.getsizeof(obj)
+
+        if isinstance(obj, dict):
+            size += sum(self.get_deep_size(k, seen) + self.get_deep_size(v, seen) for k, v in obj.items())
+        elif hasattr(obj, '__dict__'):
+            size += self.get_deep_size(vars(obj), seen)
+        elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
+            size += sum(self.get_deep_size(i, seen) for i in obj)
+
+        return size
+
     def draw_runlines(self) -> None:
         if self.working_width == 0: self.working_width = self.DEFAULT_WORK_WIDTH
 
@@ -387,6 +420,19 @@ class GPS:
             if i == closest_line_index:
                 self.course_manager.closest_runline = (pr.Vector2(start[0], start[1]), pr.Vector2(end[0], end[1]))
 
+    def draw_worked_vectors(self) -> None:
+        start_x, start_y = int((self.vehicle.x - self.WIDTH / 2 - 100) // self.GRID_SQUARE_SIZE), int((self.vehicle.y - self.HEIGHT / 2 + 100) // self.GRID_SQUARE_SIZE)
+        end_x, end_y = int((self.vehicle.x + self.WIDTH / 2 - 100) // self.GRID_SQUARE_SIZE), int((self.vehicle.y + self.HEIGHT / 2 + 100) // self.GRID_SQUARE_SIZE)
+
+        for x in range(start_x, end_x+1):
+            if self.grid_vectors.get(x, None) is None: continue
+
+            for y in range(start_y, end_y+1):
+                if self.grid_vectors[x].get(y, None) is None: continue
+
+                for vector in self.grid_vectors[x][y]:
+                    pr.draw_line_ex(vector[0], vector[1], 1, pr.GREEN)
+
     def main(self) -> None:
         while not pr.window_should_close():
             pr.begin_drawing()
@@ -395,8 +441,6 @@ class GPS:
             self.update_vt_positions()
             self.working_width = self.client.data.get("work_width", self.working_width)
 
-            pr.draw_texture(self.paint_tex.texture, 0, 0, pr.GREEN)
-
             self.camera.target = pr.Vector2(self.vehicle.x, self.vehicle.y)  # World coords to follow
             self.camera.offset = pr.Vector2(self.WIDTH / 2, self.HEIGHT / 2 + self.HEIGHT / 4)  # Keep centered on screen
             self.camera.zoom = self.zoom
@@ -404,7 +448,7 @@ class GPS:
 
             pr.begin_mode_2d(self.camera)
 
-            pr.draw_texture(self.paint_tex.texture, 0, 0, pr.GREEN)
+            self.draw_worked_vectors()
 
             self.draw_runlines()
 
@@ -428,8 +472,8 @@ class GPS:
             trailer_left = self.rotate(rot_origin, (rot_origin[0] - self.working_width / 2, rot_origin[1]), self.trailer.rad)
             trailer_right = self.rotate(rot_origin, (rot_origin[0] + self.working_width / 2, rot_origin[1]), self.trailer.rad)
 
-            trailer_left = (int(round(trailer_left[0], 0)), int(round(trailer_left[1], 0)))
-            trailer_right = (int(round(trailer_right[0], 0)), int(round(trailer_right[1], 0)))
+            trailer_left = (trailer_left[0], trailer_left[1])
+            trailer_right = (trailer_right[0], trailer_right[1])
 
             # Blue guideline
             #pr.draw_line_ex((self.vehicle.x, self.vehicle.y), rot_origin_front, 1, pr.DARKBLUE)
@@ -438,12 +482,18 @@ class GPS:
 
             color = self.get_working_color()
             color.a = 255
-            pr.draw_line_ex((int(trailer_left[0]), int(trailer_left[1])), (int(trailer_right[0]), int(trailer_right[1])), 1.5, color)
+            pr.draw_line_ex(trailer_left, trailer_right, 1.5, color)
 
             if self.get_working():
-                pr.begin_texture_mode(self.paint_tex)
-                pr.draw_line_ex((int(trailer_left[0]), 16000 - int(trailer_left[1])), (int(trailer_right[0]), 16000 - int(trailer_right[1])), 1.5, self.get_working_color())
-                pr.end_texture_mode()
+                gx, gy = int(rot_origin[0] // self.GRID_SQUARE_SIZE), int(rot_origin[1] // self.GRID_SQUARE_SIZE)
+
+                if self.grid_vectors.get(gx, None) is None:
+                    self.grid_vectors[gx] = {}
+
+                if self.grid_vectors[gx].get(gy, None) is None:
+                    self.grid_vectors[gx][gy] = [] 
+
+                self.grid_vectors[gx][gy].append((trailer_left, trailer_right))
 
             pr.end_mode_2d()
 
@@ -454,6 +504,9 @@ class GPS:
 
             for infobox in self.infoboxes:
                 infobox.update()
+
+            pr.draw_fps(10, 10)
+            pr.draw_text(f"{(self.get_deep_size(self.grid_vectors) / 1_000_000):.2f}MB vectors", 10, 30, 30, pr.GREEN)
 
             pr.end_drawing()
 
