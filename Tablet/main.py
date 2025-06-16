@@ -15,10 +15,10 @@ from time import sleep
 
 pg.init()
 
-HOST = '0.0.0.0'
-PORT = 5001
-
 class Client:
+    HOST = '0.0.0.0'
+    PORT = 5001
+
     def __init__(self, is_autosteer_engaged: object, get_desired_wheel_rotation: float | None) -> None:
         self.is_autosteer_engaged = is_autosteer_engaged
         self.get_desired_wheel_rotation = get_desired_wheel_rotation
@@ -35,7 +35,7 @@ class Client:
                 sleep(1)
 
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.connect((HOST, PORT))
+                    s.connect((self.HOST, self.PORT))
                     print("Connected")
                     self.connected = True
                     s.sendall(b'{}')
@@ -120,6 +120,8 @@ class GPS:
 
         self.infoboxes = []
 
+        self.load_settings()
+
         self.working_width = 6
         self.zoom = 8.0
 
@@ -146,6 +148,18 @@ class GPS:
         self.main()
 
         pr.close_window()
+
+    def load_settings(self) -> None:
+        try:
+            with open("settings.json", "r") as f:
+                settings = json.loads(f.read())
+
+            self.client.HOST = settings["ip_client"]
+            self.client.PORT = int(settings["port_client"])
+
+        except Exception as e:
+            print(f"Error while loading settings! Error: {e}.")
+            self.infoboxes.append(InfoBox("Error while loading settings!", "error", self.remove_infobox))
 
     def get_working_width(self) -> float:
         return self.working_width

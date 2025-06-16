@@ -8,9 +8,6 @@ from copy import deepcopy
 from threading import Thread
 from g29 import Wheel
 
-HOST = '0.0.0.0'
-PORT = 5001
-
 class DataManager:
     def __init__(self) -> None:
         self.log_path = "/mnt/HardDrive/SteamLibrary/steamapps/compatdata/1248130/pfx/drive_c/users/steamuser/Documents/My Games/FarmingSimulator2022/log.txt"
@@ -18,26 +15,20 @@ class DataManager:
 
         self.curr_data = '{}'
 
-    def parse_data(self, data) -> None:
-        vehicle_pos = (data['vx'], data['vz'])
-        tool_pos = (data['tx'], data['tz'])
-        on, lowered = (data['on'], data['lowered'])
-        width = data['width']
-
-        print(vehicle_pos, tool_pos, on, lowered, width)
-
     def run(self) -> None:
         print("Watching log.txt for GPS updates...\n")
 
         last_inode = None
 
         while True:
+            print("Rerunning watchdog...")
+
             try:
                 with open(self.log_path, "r") as file:
                     file.seek(0, 2)  # Go to the end of the file
                     last_inode = os.fstat(file.fileno()).st_ino
 
-                    while True:
+                    for i in range(100):
                         # Check if file was rotated or replaced
                         current_inode = os.stat(self.log_path).st_ino
                         if current_inode != last_inode:
@@ -60,17 +51,37 @@ class DataManager:
                 time.sleep(1)  # Avoid spamming errors
 
 class Server:
+    HOST = '0.0.0.0'
+    PORT = 5001
+
     def __init__(self) -> None:
         self.wheel_disconnect = False
         self.send_wheel_connect = False
 
         self.wheel_supported = False
+        self.working_width_override = 6
+        self.enable_working_width_override = False
+
+        self.load_settings()
 
     def on_wheel_disconnect(self) -> None:
         self.wheel_disconnect = True
 
     def on_connect_pressed(self) -> None:
         self.send_wheel_connect = True
+
+    def load_settings(self) -> None:
+        try:
+            with open("settings.json", "r") as f:
+                settings = json.loads(f.read())
+
+            self.PORT = int(settings["server_port"])
+            self.working_width_override = settings["working_width_override"]
+            self.enable_working_width_override = settings["working_width_override"]
+            self.wheel_supported = settings["allow_autosteer"]
+
+        except Exception as e:
+            print(f"Error while loading settings.json! Error: {e}.")
 
     def run(self, data_manager) -> None:
         Thread(target=data_manager.run, daemon=True).start()
@@ -85,7 +96,7 @@ class Server:
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind((HOST, PORT))
+            s.bind((self.HOST, self.PORT))
             s.listen()
             conn, addr = s.accept()
             with conn:
@@ -134,6 +145,9 @@ class Server:
 
                     send_data["wheel_disconnect"] = self.wheel_disconnect
                     send_data["wheel_connect"] = self.send_wheel_connect
+                    
+                    if self.enable_working_width_override:
+                        send_data["working_width"] = self.working_width_override
 
                     conn.sendall(json.dumps(send_data).encode())
 
