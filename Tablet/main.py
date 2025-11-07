@@ -18,8 +18,8 @@ from time import sleep
 pg.init()
 
 class Client:
-    HOST = '0.0.0.0'
-    PORT = 5001
+    HOST = '127.0.0.1'
+    PORT = 5060
 
     def __init__(self, is_autosteer_engaged: object, get_desired_wheel_rotation: float | None) -> None:
         self.is_autosteer_engaged = is_autosteer_engaged
@@ -37,6 +37,7 @@ class Client:
                 sleep(1)
 
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    print(self.HOST, self.PORT)
                     s.connect((self.HOST, self.PORT))
                     print("Connected")
                     self.connected = True
@@ -125,9 +126,12 @@ class GPS:
 
         self.load_settings()
 
-        self.working_width = 6
-        self.zoom = 8.0
+        self.zoom = 2.0
+        self.mag = 16
 
+        self.DEFAULT_WORK_WIDTH *= self.mag
+
+        self.working_width = self.DEFAULT_WORK_WIDTH
         self.paint_cycle_index = 3
 
         self.course_manager = CourseManager(self.get_working_width)
@@ -287,12 +291,12 @@ class GPS:
         self.infoboxes.append(InfoBox("Data save successful!", 'info', self.remove_infobox))
 
     def update_vt_positions(self) -> None:
-        self.vehicle.x = self.client.data.get('vx', 0) + 8000
-        self.vehicle.y = self.client.data.get('vz', 0) + 8000
+        self.vehicle.x = self.client.data.get('vx', 0)*2 + 8000
+        self.vehicle.y = self.client.data.get('vz', 0)*2 + 8000
         self.vehicle.rotation = self.client.data.get('vry', 0)
 
-        self.trailer.x = self.client.data.get('tx', 0) + 8000
-        self.trailer.y = self.client.data.get('tz', 0) + 8000
+        self.trailer.x = self.client.data.get('tx', 0)*2 + 8000
+        self.trailer.y = self.client.data.get('tz', 0)*2 + 8000
         self.trailer.rotation = self.client.data.get('try', 0)
 
     def rotate(self, origin, point, angle):
@@ -326,10 +330,10 @@ class GPS:
         else: return pr.Color(255, 0, 0, 255)
 
     def zoom_in(self) -> None:
-        self.zoom = min(16, self.zoom * 1.5)
+        self.zoom = min(2*(self.mag/4), self.zoom * 1.5)
     
     def zoom_out(self) -> None:
-        self.zoom = max(0.3, self.zoom / 1.5)
+        self.zoom = max(0.3/(self.mag/4), self.zoom / 1.5)
 
     def draw_rotated_line(self, start: pr.Vector2, length: float, angle_deg: float, thickness: float, color, offset: float = 0.0) -> None:
         angle_rad = radians(angle_deg)
@@ -415,7 +419,7 @@ class GPS:
                 w = 0.02
                 color = pr.Color(200, 0, 0, 128)
 
-            pr.draw_line_ex(start, end, w * self.zoom, color)
+            pr.draw_line_ex(start, end, w * self.zoom * self.mag, color)
 
             if i == closest_line_index:
                 self.course_manager.closest_runline = (pr.Vector2(start[0], start[1]), pr.Vector2(end[0], end[1]))
@@ -439,7 +443,7 @@ class GPS:
             pr.clear_background((50, 50, 50))
 
             self.update_vt_positions()
-            self.working_width = self.client.data.get("work_width", self.working_width)
+            self.working_width = self.client.data.get("work_width" * self.mag, self.working_width)
 
             self.camera.target = pr.Vector2(self.vehicle.x, self.vehicle.y)  # World coords to follow
             self.camera.offset = pr.Vector2(self.WIDTH / 2, self.HEIGHT / 2 + self.HEIGHT / 4)  # Keep centered on screen
@@ -448,13 +452,22 @@ class GPS:
 
             pr.begin_mode_2d(self.camera)
 
-            self.draw_worked_vectors()
+            #self.draw_worked_vectors()
+            pr.draw_texture(self.paint_tex.texture, 0, 0, pr.GREEN)
 
             self.draw_runlines()
 
-            poly_left = self.rotate((self.vehicle.x, self.vehicle.y), (self.vehicle.x - 2.5, self.vehicle.y), self.vehicle.rad)
-            poly_top = self.rotate((self.vehicle.x, self.vehicle.y), (self.vehicle.x, self.vehicle.y - 5), self.vehicle.rad)
-            poly_right = self.rotate((self.vehicle.x, self.vehicle.y), (self.vehicle.x + 2.5, self.vehicle.y), self.vehicle.rad)
+            origin = (self.vehicle.x, self.vehicle.y + dist((self.vehicle.x, self.vehicle.y), (self.trailer.x, self.trailer.y)) / 10000)
+            origin_front = (self.vehicle.x, self.vehicle.y - self.mag)
+
+            rot_origin = self.rotate((self.vehicle.x, self.vehicle.y), origin, self.vehicle.rad)
+            rot_origin_front = self.rotate((self.vehicle.x, self.vehicle.y), origin_front, self.vehicle.rad)
+
+            x, y = rot_origin_front
+
+            poly_left = self.rotate((x, y), (x - 2.5*self.mag/2, y), self.vehicle.rad)
+            poly_top = self.rotate((x, y), (x, y - 5*self.mag/2), self.vehicle.rad)
+            poly_right = self.rotate((x, y), (x + 2.5*self.mag/2, y), self.vehicle.rad)
 
             pr.draw_triangle(
                 pr.Vector2(poly_left[0], poly_left[1]),
@@ -462,12 +475,6 @@ class GPS:
                 pr.Vector2(poly_top[0], poly_top[1]),
                 pr.GREEN
             )
-
-            origin = (self.vehicle.x, self.vehicle.y + dist((self.vehicle.x, self.vehicle.y), (self.trailer.x, self.trailer.y)) / 2)
-            origin_front = (self.vehicle.x, self.vehicle.y - 10)
-
-            rot_origin = self.rotate((self.vehicle.x, self.vehicle.y), origin, self.vehicle.rad)
-            rot_origin_front = self.rotate((self.vehicle.x, self.vehicle.y), origin_front, self.vehicle.rad)
 
             trailer_left = self.rotate(rot_origin, (rot_origin[0] - self.working_width / 2, rot_origin[1]), self.trailer.rad)
             trailer_right = self.rotate(rot_origin, (rot_origin[0] + self.working_width / 2, rot_origin[1]), self.trailer.rad)
@@ -478,11 +485,11 @@ class GPS:
             # Blue guideline
             #pr.draw_line_ex((self.vehicle.x, self.vehicle.y), rot_origin_front, 1, pr.DARKBLUE)
 
-            pr.draw_line_ex((self.vehicle.x, self.vehicle.y), (rot_origin[0], rot_origin[1]), 0.5, pr.BLACK)
+            pr.draw_line_ex(rot_origin_front, (rot_origin[0], rot_origin[1]), 0.5, pr.BLACK)
 
             color = self.get_working_color()
             color.a = 255
-            pr.draw_line_ex(trailer_left, trailer_right, 1.5, color)
+            pr.draw_line_ex(trailer_left, trailer_right, 1.5*self.mag/2, color)
 
             if self.get_working():
                 gx, gy = int(rot_origin[0] // self.GRID_SQUARE_SIZE), int(rot_origin[1] // self.GRID_SQUARE_SIZE)
@@ -493,7 +500,11 @@ class GPS:
                 if self.grid_vectors[gx].get(gy, None) is None:
                     self.grid_vectors[gx][gy] = [] 
 
-                self.grid_vectors[gx][gy].append((trailer_left, trailer_right))
+                #self.grid_vectors[gx][gy].append((trailer_left, trailer_right))
+
+                pr.begin_texture_mode(self.paint_tex)
+                pr.draw_line_ex((int(trailer_left[0]), 16000 - int(trailer_left[1])), (int(trailer_right[0]), 16000 - int(trailer_right[1])), 1.5*self.mag/2, self.get_working_color())
+                pr.end_texture_mode()
 
             pr.end_mode_2d()
 

@@ -52,7 +52,7 @@ class DataManager:
 
 class Server:
     HOST = '0.0.0.0'
-    PORT = 5001
+    PORT = 5060
 
     def __init__(self) -> None:
         self.wheel_disconnect = False
@@ -97,6 +97,7 @@ class Server:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind((self.HOST, self.PORT))
+            print("Server binded.")
             s.listen()
             conn, addr = s.accept()
             with conn:
@@ -121,7 +122,8 @@ class Server:
                     try:
                         data = json.loads(data.decode())
 
-                        wheel.update()
+                        if self.wheel_supported:
+                            wheel.update()
 
                         if data.get("recieved_wheel_connect"):
                             self.send_wheel_connect = False
@@ -137,7 +139,8 @@ class Server:
                         else:
                             self.wheel_disconnect = False
                     
-                        send_data["desired_wheel_rotation"] = wheel.get_state()["steering"]
+                        if self.wheel_supported:
+                            send_data["desired_wheel_rotation"] = wheel.get_state()["steering"]
 
                     except Exception as e:
                         print(f"Error: {e}!")
