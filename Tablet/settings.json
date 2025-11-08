@@ -1,1 +1,1 @@
-{"log_path": "/home/captaindeathead/Documents/My Games/FarmingSimulator2022/", "server_port": "5001", "working_width_override": "6", "enable_working_width_override": false, "allow_autosteer": true, "ip_client": "127.0.0.1", "port_client": "5060"}
+{"log_path": "/home/captaindeathead/Documents/My Games/FarmingSimulator2022/", "server_port": "5001", "working_width_override": "6", "enable_working_width_override": false, "allow_autosteer": true, "ip_client": "127.0.0.1", "port_client": 5060}

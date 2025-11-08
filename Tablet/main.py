@@ -21,9 +21,13 @@ class Client:
     HOST = '127.0.0.1'
     PORT = 5060
 
-    def __init__(self, is_autosteer_engaged: object, get_desired_wheel_rotation: float | None) -> None:
+    def __init__(self, settings: dict[str, any], is_autosteer_engaged: object, get_desired_wheel_rotation: float | None) -> None:
+        self.settings = settings
         self.is_autosteer_engaged = is_autosteer_engaged
         self.get_desired_wheel_rotation = get_desired_wheel_rotation
+
+        self.HOST = self.settings["ip_client"]
+        self.PORT = self.settings["port_client"]
 
         self.connected = False
 
@@ -103,7 +107,9 @@ class GPS:
     GRID_SQUARE_SIZE = 100
 
     def __init__(self) -> None:
-        self.client = Client(self.is_autosteer_enabled, self.get_desired_wheel_rotation)
+        self.settings = json.loads(open("settings.json", 'r').read())
+
+        self.client = Client(self.settings, self.is_autosteer_enabled, self.get_desired_wheel_rotation)
         Thread(target=self.client.run, daemon=True).start()
 
         pr.set_config_flags(pr.ConfigFlags.FLAG_MSAA_4X_HINT)
@@ -162,7 +168,7 @@ class GPS:
         self.vehicle = Vehicle()
         self.trailer = Trailer()
 
-        self.sidebar = Sidebar(self.is_autosteer_enabled, self.set_autosteer, self.reset_paint, self.set_ab, self.nudge_runlines, self.save, self.zoom_in, self.zoom_out)
+        self.sidebar = Sidebar(self.settings, self.is_autosteer_enabled, self.set_autosteer, self.reset_paint, self.set_ab, self.nudge_runlines, self.save, self.zoom_in, self.zoom_out)
 
         self.main()
 
@@ -238,7 +244,7 @@ class GPS:
         # Add key to the set
         self.pressed_keys.append(key)
 
-        # Check for Ctrl + Shift + A
+        # Check for Ctrl + Shift
         if (keyboard.Key.ctrl_l in self.pressed_keys or keyboard.Key.ctrl_r in self.pressed_keys) and \
         (keyboard.Key.shift in self.pressed_keys or keyboard.Key.shift_r in self.pressed_keys): 
             if key == keyboard.KeyCode.from_char('A'):
@@ -249,6 +255,26 @@ class GPS:
                 self.cycle_paint_requirements()
             elif key == keyboard.Key.enter:
                 self.set_autosteer(not self.is_autosteer_enabled())
+        elif key == keyboard.Key.backspace:
+            self.sidebar.send_key_typing(None)
+        else:
+            if not hasattr(key, 'char'): return
+
+            char = ''
+
+            if ord('a') <= ord(key.char) <= ord('z'):
+                char = key.char
+
+            elif ord('A') <= ord(key.char) <= ord('Z'):
+                char = key.char
+
+            elif ord('0') <= ord(key.char) <= ord('9'):
+                char = key.char
+            
+            elif key.char in "~!@#$%^&*()_+`-=[]{}\\|;:'\",./<>?":
+                char = key.char
+
+            self.sidebar.send_key_typing(char)
 
     def on_key_release(self, key) -> None:
         try:
@@ -292,6 +318,9 @@ class GPS:
 
         with open("ab.txt", "w") as f:
             f.write(f"{self.course_manager.run_dir},{self.course_manager.run_offset}")
+
+        with open("settings.json", 'w') as f:
+            f.write(json.dumps(self.settings))
 
         pr.begin_drawing()
 
@@ -520,6 +549,10 @@ class GPS:
 
             self.sidebar.update()
 
+            if self.sidebar.settings_box.restart_required:
+                self.save()
+                return
+
             for infobox in self.infoboxes:
                 infobox.update()
 
@@ -544,4 +577,8 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         HOST = sys.argv[1]
 
-    GPS()
+    while 1:
+        gps = GPS()
+
+        if not gps.sidebar.settings_box.restart_required:
+            break
