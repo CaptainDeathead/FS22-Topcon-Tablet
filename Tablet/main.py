@@ -257,19 +257,19 @@ class GPS:
             print(f"Error when removing keys: {e}!")
 
     def load_map_information(self) -> None:
-        """
         if os.path.isfile("paint.png"):
             image = pr.load_image("paint.png")
             texture = pr.load_texture_from_image(image)
             pr.unload_image(image)
 
             pr.begin_texture_mode(self.paint_tex)
-            pr.draw_texture(texture, 0, 0, pr.GREEN)
+            pr.rl_set_blend_mode(3)
+            pr.draw_texture(texture, 0, 0, pr.WHITE)
+            pr.rl_set_blend_mode(0)
             pr.end_texture_mode()
         else:
             print(f"Paint texture (paint.png) file doesn't exist! Previous paint data cleared.")
             self.infoboxes.append(InfoBox("Paint texture file doesn't exist!", 'warning', self.remove_infobox))
-        """
 
         if os.path.isfile("ab.txt"):
             with open("ab.txt", "r") as f:
@@ -282,11 +282,18 @@ class GPS:
             self.infoboxes.append(InfoBox("AB data file (ab.txt) doesn't exist!", 'warning', self.remove_infobox))
 
     def save(self) -> None:
-        #image = pr.load_image_from_texture(self.paint_tex.texture)
-        #pr.export_image(image, "paint.png")
+        self.infoboxes.append(InfoBox("Saving data...", 'warning', self.remove_infobox))
+
+        self.infoboxes[-1].update()
+        pr.end_drawing()
+
+        image = pr.load_image_from_texture(self.paint_tex.texture)
+        pr.export_image(image, "paint.png")
 
         with open("ab.txt", "w") as f:
             f.write(f"{self.course_manager.run_dir},{self.course_manager.run_offset}")
+
+        pr.begin_drawing()
 
         self.infoboxes.append(InfoBox("Data save successful!", 'info', self.remove_infobox))
 

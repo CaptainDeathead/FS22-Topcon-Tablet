@@ -14,9 +14,13 @@ class Button:
         self.bg_color = bg_color
         self.bg_color_pressed = bg_color_pressed
 
+        self.hidden = False
+
         self.onclick = onclick
 
     def update(self, draw_background: bool = False) -> None:
+        if self.hidden: return
+
         self.draw(draw_background)
 
         if not pr.is_mouse_button_pressed(0): return
@@ -77,7 +81,7 @@ class InfoBox:
         pr.draw_text(self.text, int(self.screen_width / 2 - self.text_width / 2), 30, self.FONT_SIZE, pr.WHITE)
 
 class Sidebar:
-    ITEMS = ["paddock", "runline_select", "AB", "nudge", "runline_save", "zoom-in", "zoom-out", "wheel"]
+    ITEMS = ["paddock", "A", "nudge", "save", "zoom-in", "zoom-out", "settings", "wheel"]
 
     BUTTON_WIDTH = 60
     BUTTON_HEIGHT = 60
@@ -94,6 +98,8 @@ class Sidebar:
         self.set_ab = set_ab
         self.nudge_runlines = nudge_runlines
         self.save = save
+
+        self.a_pressed = False
 
         self.zoom_in = zoom_in
         self.zoom_out = zoom_out
@@ -113,6 +119,8 @@ class Sidebar:
 
             if y == len(self.ITEMS) - 1:
                 ry = self.screen_height - h
+            elif y == len(self.ITEMS) - 2:
+                ry = self.screen_height - h * 2
             else:
                 ry = y*h
 
@@ -127,11 +135,26 @@ class Sidebar:
 
         match item:
             case "paddock": self.reset_paint()
-            case "AB": self.set_ab()
+            case "A":
+                self.a_pressed = not self.a_pressed
+
+                if self.a_pressed:
+                    img = pr.load_image("assets/flag.png")
+                    pr.image_resize(img, self.BUTTON_WIDTH, self.BUTTON_HEIGHT)
+                else:
+                    img = pr.load_image("assets/A.png")
+                    pr.image_resize(img, self.BUTTON_WIDTH, self.BUTTON_HEIGHT)
+
+                tex = pr.load_texture_from_image(img)
+                self.buttons[self.ITEMS.index("A")].image = tex
+
+                self.set_ab()
+
             case "nudge": self.nudge_runlines()
-            case "runline_save": self.save()
+            case "save": self.save()
             case "zoom-in": self.zoom_in()
             case "zoom-out": self.zoom_out()
+            case "settings": ...
             case "wheel": self.set_autosteer(not self.is_autosteer_enabled())
 
     def get_wheel_connected_color(self) -> pr.Color:
