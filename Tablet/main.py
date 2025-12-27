@@ -10,7 +10,7 @@ from shapely.geometry import Polygon, LineString
 from shapely.ops import unary_union
 
 from UI import Sidebar, Button, InfoBox
-from math import atan2, sin, cos, radians, degrees, dist, sqrt
+from math import atan2, sin, cos, radians, degrees, dist, sqrt, floor, ceil
 from threading import Thread
 from pynput import keyboard
 from time import sleep
@@ -105,6 +105,7 @@ class GPS:
 
     PAINT_CYCLES = ((False, False), (True, False), (False, True), (True, True)) # (lowered, on) required
     GRID_SQUARE_SIZE = 100
+    CHUNK_SIZE = 1000
 
     def __init__(self) -> None:
         self.settings = json.loads(open("settings.json", 'r').read())
@@ -149,7 +150,7 @@ class GPS:
         self.camera.zoom = 1.0
         self.camera.rotation = 0.0
 
-        self.paint_tex = pr.load_render_texture(16000, 16000)
+        self.paint_tex_grid = {}
         
         """
         grid_vectors layout:
@@ -206,7 +207,11 @@ class GPS:
         return self.course_manager.desired_wheel_rotation
 
     def reset_paint(self) -> None:
-        self.paint_tex = pr.load_render_texture(16000, 16000)
+        for coord, texture in self.paint_tex_grid:
+            pr.unload_render_texture(texture)
+
+        self.paint_tex_grid = {}
+
         self.infoboxes.append(InfoBox("Paint data reset!", 'warning', self.remove_infobox))
 
     def set_ab(self) -> None:
@@ -283,6 +288,9 @@ class GPS:
             print(f"Error when removing keys: {e}!")
 
     def load_map_information(self) -> None:
+        # FIXME: Update loading to work with the new texture grid
+        self.infoboxes.append(InfoBox("FIXME: Update loading to work with the new texture grid", 'error', self.remove_infobox))
+        return
         if os.path.isfile("paint.png"):
             image = pr.load_image("paint.png")
             texture = pr.load_texture_from_image(image)
@@ -308,6 +316,10 @@ class GPS:
             self.infoboxes.append(InfoBox("AB data file (ab.txt) doesn't exist!", 'warning', self.remove_infobox))
 
     def save(self) -> None:
+        # TODO: Update saving to work with the new texture grid
+        self.infoboxes.append(InfoBox("FIXME: Update saving to work with the new texture grid", 'error', self.remove_infobox))
+        return
+
         self.infoboxes.append(InfoBox("Saving data...", 'warning', self.remove_infobox))
 
         self.infoboxes[-1].update()
@@ -473,6 +485,31 @@ class GPS:
                 for vector in self.grid_vectors[x][y]:
                     pr.draw_line_ex(vector[0], vector[1], 1, pr.GREEN)
 
+    def get_textures_in_rect(self, rect: pr.Rectangle, add: bool = False) -> list[tuple[tuple[int, int], pr.RenderTexture]]:
+        rect_start = (rect.x / self.CHUNK_SIZE, rect.y / self.CHUNK_SIZE)
+        rect_end  = ((rect.x + rect.width) / self.CHUNK_SIZE, (rect.y + rect.height) / self.CHUNK_SIZE)
+
+        textures = []
+
+        for x in range(floor(rect_start[0]), ceil(rect_end[0])):
+            for y in range(floor(rect_start[1]), ceil(rect_end[1])):
+                if (x, y) in self.paint_tex_grid:
+                    textures.append(((x, y), self.paint_tex_grid[(x, y)]))
+                
+                # Create a new render texture and add it to the grid
+                elif add:
+                    tex = pr.load_render_texture(self.CHUNK_SIZE, self.CHUNK_SIZE)
+                    self.paint_tex_grid[(x, y)] = tex
+                    textures.append(((x, y), tex))
+
+        return textures
+
+    def paint(self, start: tuple[int, int], end: tuple[int, int], width: float, color: pr.Color, loaded_textures: list[tuple[tuple[int, int], pr.RenderTexture]]) -> None:
+        for (tx, ty), texture in loaded_textures:
+            pr.begin_texture_mode(texture)
+            pr.draw_line_ex((start[0] - tx * self.CHUNK_SIZE, self.CHUNK_SIZE - (start[1] - ty * self.CHUNK_SIZE)), (end[0] - tx * self.CHUNK_SIZE, self.CHUNK_SIZE - (end[1] - ty * self.CHUNK_SIZE)), width, color)
+            pr.end_texture_mode()
+
     def main(self) -> None:
         while not pr.window_should_close():
             pr.begin_drawing()
@@ -489,7 +526,10 @@ class GPS:
             pr.begin_mode_2d(self.camera)
 
             #self.draw_worked_vectors()
-            pr.draw_texture(self.paint_tex.texture, 0, 0, pr.GREEN)
+            loaded_textures = self.get_textures_in_rect(pr.Rectangle(self.vehicle.x - self.WIDTH, self.vehicle.y - self.HEIGHT, self.WIDTH * 2, self.HEIGHT * 2), add=True)
+
+            for (tx, ty), texture in loaded_textures:
+                pr.draw_texture(texture.texture, tx * self.CHUNK_SIZE, ty * self.CHUNK_SIZE, pr.GREEN)
 
             self.draw_runlines()
 
@@ -540,9 +580,7 @@ class GPS:
 
                 #self.grid_vectors[gx][gy].append((trailer_left, trailer_right))
 
-                pr.begin_texture_mode(self.paint_tex)
-                pr.draw_line_ex((int(trailer_left[0]), 16000 - int(trailer_left[1])), (int(trailer_right[0]), 16000 - int(trailer_right[1])), 1.5*self.mag/2, self.get_working_color())
-                pr.end_texture_mode()
+                self.paint(trailer_left, trailer_right, 1.5*self.mag/2, self.get_working_color(), loaded_textures)
 
             pr.end_mode_2d()
 
