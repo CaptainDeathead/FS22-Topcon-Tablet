@@ -133,7 +133,7 @@ class GPS:
         self.load_settings()
 
         self.zoom = 2.0
-        self.mag = 4
+        self.mag = 8
 
         self.DEFAULT_WORK_WIDTH *= self.mag
 
@@ -493,7 +493,7 @@ class GPS:
 
             self.draw_runlines()
 
-            origin = (self.vehicle.x, self.vehicle.y + dist((self.vehicle.x, self.vehicle.y), (self.trailer.x, self.trailer.y)) / 10000)
+            origin = (self.vehicle.x, self.vehicle.y)
             origin_front = (self.vehicle.x, self.vehicle.y - self.mag)
 
             rot_origin = self.rotate((self.vehicle.x, self.vehicle.y), origin, self.vehicle.rad)
@@ -511,6 +511,8 @@ class GPS:
                 pr.Vector2(poly_top[0], poly_top[1]),
                 pr.GREEN
             )
+
+            rot_origin = (self.trailer.x, self.trailer.y)
 
             trailer_left = self.rotate(rot_origin, (rot_origin[0] - self.working_width / 2, rot_origin[1]), self.trailer.rad)
             trailer_right = self.rotate(rot_origin, (rot_origin[0] + self.working_width / 2, rot_origin[1]), self.trailer.rad)
