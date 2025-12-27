@@ -4,6 +4,7 @@ import json
 import socket
 import os
 import sys
+import shutil
 
 from course import CourseManager
 from shapely.geometry import Polygon, LineString
@@ -143,8 +144,10 @@ class GPS:
 
         self.course_manager = CourseManager(self.get_working_width)
         
-        self.autosteer_engage_sound = pr.load_sound("assets/sounds/gpsEngage.mp3")
-        self.autosteer_disengage_sound = pr.load_sound("assets/sounds/gpsDisengage.ogg")
+        #self.autosteer_engage_sound = pr.load_sound("assets/sounds/gpsEngage.mp3")
+        #self.autosteer_disengage_sound = pr.load_sound("assets/sounds/gpsDisengage.ogg")
+        self.autosteer_engage_sound = pr.load_sound("assets/sounds/SteeringEngagedAlarm.wav")
+        self.autosteer_disengage_sound = pr.load_sound("assets/sounds/SteeringDisengagedAlarm.wav")
 
         self.camera = pr.Camera2D()
         self.camera.zoom = 1.0
@@ -288,22 +291,30 @@ class GPS:
             print(f"Error when removing keys: {e}!")
 
     def load_map_information(self) -> None:
-        # FIXME: Update loading to work with the new texture grid
-        self.infoboxes.append(InfoBox("FIXME: Update loading to work with the new texture grid", 'error', self.remove_infobox))
-        return
-        if os.path.isfile("paint.png"):
-            image = pr.load_image("paint.png")
-            texture = pr.load_texture_from_image(image)
-            pr.unload_image(image)
+        # This assumes that all filenames in the directory are paint data files. Some data could be changed by the user or corrupted in some way. More robust error handling should be added.
+        # The warning my come up if there is no data which could be confusing.
 
-            pr.begin_texture_mode(self.paint_tex)
-            pr.rl_set_blend_mode(3)
-            pr.draw_texture(texture, 0, 0, pr.WHITE)
-            pr.rl_set_blend_mode(0)
-            pr.end_texture_mode()
+        if os.path.isdir(".paint-data"):
+            for filename in os.listdir(".paint-data"):
+                image = pr.load_image(f".paint-data/{filename}")
+                texture = pr.load_texture_from_image(image)
+                pr.unload_image(image)
+
+                x, y = filename.replace(".png", "").split("-")
+
+                self.paint_tex_grid[(int(x), int(y))] = pr.load_render_texture(self.CHUNK_SIZE, self.CHUNK_SIZE)
+
+                pr.begin_texture_mode(self.paint_tex_grid[(int(x), int(y))])
+                pr.rl_set_blend_mode(3)
+                #pr.draw_texture(texture, 0, 0, pr.WHITE)
+                pr.draw_texture_rec(texture, pr.Rectangle(0, 0, texture.width, -texture.height), (0, 0), pr.WHITE)
+                pr.rl_set_blend_mode(0)
+                pr.end_texture_mode()
         else:
-            print(f"Paint texture (paint.png) file doesn't exist! Previous paint data cleared.")
-            self.infoboxes.append(InfoBox("Paint texture file doesn't exist!", 'warning', self.remove_infobox))
+            print(f"Paint data doesn't exist! Previous paint data cleared.")
+            self.infoboxes.append(InfoBox("Paint data doesn't exist!", 'warning', self.remove_infobox))
+
+        # AB data could also be changed or corrupted. More robust error handling should be implemented here too.
 
         if os.path.isfile("ab.txt"):
             with open("ab.txt", "r") as f:
@@ -316,17 +327,17 @@ class GPS:
             self.infoboxes.append(InfoBox("AB data file (ab.txt) doesn't exist!", 'warning', self.remove_infobox))
 
     def save(self) -> None:
-        # TODO: Update saving to work with the new texture grid
-        self.infoboxes.append(InfoBox("FIXME: Update saving to work with the new texture grid", 'error', self.remove_infobox))
-        return
-
         self.infoboxes.append(InfoBox("Saving data...", 'warning', self.remove_infobox))
 
         self.infoboxes[-1].update()
         pr.end_drawing()
 
-        image = pr.load_image_from_texture(self.paint_tex.texture)
-        pr.export_image(image, "paint.png")
+        shutil.rmtree(".paint-data", True)
+        os.mkdir(".paint-data")
+
+        for (x, y) in self.paint_tex_grid.keys():
+            image = pr.load_image_from_texture(self.paint_tex_grid[(x, y)].texture)
+            pr.export_image(image, f".paint-data/{x}-{y}.png")
 
         with open("ab.txt", "w") as f:
             f.write(f"{self.course_manager.run_dir},{self.course_manager.run_offset}")
@@ -374,7 +385,7 @@ class GPS:
     def get_working_color(self) -> pr.Color:
         working = self.get_working()
 
-        if working: return pr.Color(0, 150, 0, 128)
+        if working: return pr.Color(0, 150, 0, 255)
         else: return pr.Color(255, 0, 0, 255)
 
     def zoom_in(self) -> None:
