@@ -210,7 +210,7 @@ class GPS:
         return self.course_manager.desired_wheel_rotation
 
     def reset_paint(self) -> None:
-        for coord, texture in self.paint_tex_grid:
+        for coord, texture in self.paint_tex_grid.items():
             pr.unload_render_texture(texture)
 
         self.paint_tex_grid = {}
