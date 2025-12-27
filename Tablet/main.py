@@ -133,7 +133,7 @@ class GPS:
         self.load_settings()
 
         self.zoom = 2.0
-        self.mag = 16
+        self.mag = 4
 
         self.DEFAULT_WORK_WIDTH *= self.mag
 
@@ -327,12 +327,12 @@ class GPS:
         self.infoboxes.append(InfoBox("Data save successful!", 'info', self.remove_infobox))
 
     def update_vt_positions(self) -> None:
-        self.vehicle.x = self.client.data.get('vx', 0)*2 + 8000
-        self.vehicle.y = self.client.data.get('vz', 0)*2 + 8000
+        self.vehicle.x = self.client.data.get('vx', 0)*self.mag + 8000
+        self.vehicle.y = self.client.data.get('vz', 0)*self.mag + 8000
         self.vehicle.rotation = self.client.data.get('vry', 0)
 
-        self.trailer.x = self.client.data.get('tx', 0)*2 + 8000
-        self.trailer.y = self.client.data.get('tz', 0)*2 + 8000
+        self.trailer.x = self.client.data.get('tx', 0)*self.mag + 8000
+        self.trailer.y = self.client.data.get('tz', 0)*self.mag + 8000
         self.trailer.rotation = self.client.data.get('try', 0)
 
     def rotate(self, origin, point, angle):
