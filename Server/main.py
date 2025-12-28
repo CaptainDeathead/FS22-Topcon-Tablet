@@ -2,15 +2,22 @@ import time
 import json
 import socket
 import os
+from tkinter import messagebox
 
 from traceback import print_exc
 from copy import deepcopy
 from threading import Thread
-from g29 import Wheel
+
+try:
+    from g29 import Wheel
+except Exception as e:
+    print(f"Failed to initialize G29 support!")
 
 class DataManager:
     def __init__(self) -> None:
-        self.log_path = "/mnt/HardDrive/SteamLibrary/steamapps/compatdata/1248130/pfx/drive_c/users/steamuser/Documents/My Games/FarmingSimulator2022/log.txt"
+        self.settings = json.loads(open("settings.json", 'r').read())
+
+        self.log_path = self.settings["log_path"]
         self.gps_keyword = "TopconX35"
 
         self.curr_data = '{}'
@@ -83,7 +90,12 @@ class Server:
         except Exception as e:
             print(f"Error while loading settings.json! Error: {e}.")
 
+    def run_ui(self) -> None:
+        while 1:
+            messagebox.showinfo("TopconX35 - Server running!", "Server running! Close console to close.")
+
     def run(self, data_manager) -> None:
+        Thread(target=self.run_ui, daemon=True).start()
         Thread(target=data_manager.run, daemon=True).start()
 
         try:
@@ -96,8 +108,13 @@ class Server:
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            s.bind((self.HOST, self.PORT))
-            print("Server binded.")
+
+            try:
+                s.bind((self.HOST, self.PORT))
+                print("Server binded.")
+            except Exception as e:
+                messagebox.showerror("Failed to start server!", "Failed to bind server! Is it already running?")
+
             s.listen()
             conn, addr = s.accept()
             with conn:
@@ -154,8 +171,11 @@ class Server:
 
                     conn.sendall(json.dumps(send_data).encode())
 
-if __name__ == "__main__":
+def run() -> None:
     while 1:
         data_manager = DataManager()
         Server().run(data_manager)
         print("restarting...")
+
+if __name__ == "__main__":
+    run()

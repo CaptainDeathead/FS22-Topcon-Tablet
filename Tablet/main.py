@@ -7,8 +7,6 @@ import sys
 import shutil
 
 from course import CourseManager
-from shapely.geometry import Polygon, LineString
-from shapely.ops import unary_union
 
 from UI import Sidebar, Button, InfoBox
 from math import atan2, sin, cos, radians, degrees, dist, sqrt, floor, ceil
@@ -135,7 +133,7 @@ class GPS:
         self.load_settings()
 
         self.zoom = 2.0
-        self.mag = 8
+        self.mag = 16
 
         self.DEFAULT_WORK_WIDTH *= self.mag
 
@@ -155,18 +153,6 @@ class GPS:
 
         self.paint_tex_grid = {}
         
-        """
-        grid_vectors layout:
-        {
-            -8: {
-                -1: {
-                    [(..., ...),]
-                }
-            }
-        }
-        """
-        self.grid_vectors = {}
-
         self.load_map_information()
 
         self.vehicle = Vehicle()
@@ -300,7 +286,7 @@ class GPS:
                 texture = pr.load_texture_from_image(image)
                 pr.unload_image(image)
 
-                x, y = filename.replace(".png", "").split("-")
+                x, y = filename.replace(".png", "").split("_")
 
                 self.paint_tex_grid[(int(x), int(y))] = pr.load_render_texture(self.CHUNK_SIZE, self.CHUNK_SIZE)
 
@@ -337,7 +323,7 @@ class GPS:
 
         for (x, y) in self.paint_tex_grid.keys():
             image = pr.load_image_from_texture(self.paint_tex_grid[(x, y)].texture)
-            pr.export_image(image, f".paint-data/{x}-{y}.png")
+            pr.export_image(image, f".paint-data/{x}_{y}.png")
 
         with open("ab.txt", "w") as f:
             f.write(f"{self.course_manager.run_dir},{self.course_manager.run_offset}")
@@ -350,12 +336,12 @@ class GPS:
         self.infoboxes.append(InfoBox("Data save successful!", 'info', self.remove_infobox))
 
     def update_vt_positions(self) -> None:
-        self.vehicle.x = self.client.data.get('vx', 0)*self.mag + 8000
-        self.vehicle.y = self.client.data.get('vz', 0)*self.mag + 8000
+        self.vehicle.x = self.client.data.get('vx', 0)*self.mag
+        self.vehicle.y = self.client.data.get('vz', 0)*self.mag
         self.vehicle.rotation = self.client.data.get('vry', 0)
 
-        self.trailer.x = self.client.data.get('tx', 0)*self.mag + 8000
-        self.trailer.y = self.client.data.get('tz', 0)*self.mag + 8000
+        self.trailer.x = self.client.data.get('tx', 0)*self.mag
+        self.trailer.y = self.client.data.get('tz', 0)*self.mag
         self.trailer.rotation = self.client.data.get('try', 0)
 
     def rotate(self, origin, point, angle):
@@ -483,19 +469,6 @@ class GPS:
             if i == closest_line_index:
                 self.course_manager.closest_runline = (pr.Vector2(start[0], start[1]), pr.Vector2(end[0], end[1]))
 
-    def draw_worked_vectors(self) -> None:
-        start_x, start_y = int((self.vehicle.x - self.WIDTH / 2 - 100) // self.GRID_SQUARE_SIZE), int((self.vehicle.y - self.HEIGHT / 2 + 100) // self.GRID_SQUARE_SIZE)
-        end_x, end_y = int((self.vehicle.x + self.WIDTH / 2 - 100) // self.GRID_SQUARE_SIZE), int((self.vehicle.y + self.HEIGHT / 2 + 100) // self.GRID_SQUARE_SIZE)
-
-        for x in range(start_x, end_x+1):
-            if self.grid_vectors.get(x, None) is None: continue
-
-            for y in range(start_y, end_y+1):
-                if self.grid_vectors[x].get(y, None) is None: continue
-
-                for vector in self.grid_vectors[x][y]:
-                    pr.draw_line_ex(vector[0], vector[1], 1, pr.GREEN)
-
     def get_textures_in_rect(self, rect: pr.Rectangle, add: bool = False) -> list[tuple[tuple[int, int], pr.RenderTexture]]:
         rect_start = (rect.x / self.CHUNK_SIZE, rect.y / self.CHUNK_SIZE)
         rect_end  = ((rect.x + rect.width) / self.CHUNK_SIZE, (rect.y + rect.height) / self.CHUNK_SIZE)
@@ -527,19 +500,25 @@ class GPS:
             pr.clear_background((50, 50, 50))
 
             self.update_vt_positions()
-            self.working_width = self.client.data.get("work_width" * self.mag, self.working_width)
+
+            new_work_width = self.client.data.get("work_width", None)
+
+            if new_work_width is not None:
+                self.working_width = new_work_width * self.mag 
 
             self.camera.target = pr.Vector2(self.vehicle.x, self.vehicle.y)  # World coords to follow
-            self.camera.offset = pr.Vector2(self.WIDTH / 2, self.HEIGHT / 2 + self.HEIGHT / 4)  # Keep centered on screen
+            self.camera.offset = pr.Vector2(self.WIDTH / 2, self.HEIGHT / 2 + self.HEIGHT / 8)  # Keep centered on screen
             self.camera.zoom = self.zoom
             self.camera.rotation = -self.vehicle.rotation
 
             pr.begin_mode_2d(self.camera)
 
-            #self.draw_worked_vectors()
             loaded_textures = self.get_textures_in_rect(pr.Rectangle(self.vehicle.x - self.WIDTH, self.vehicle.y - self.HEIGHT, self.WIDTH * 2, self.HEIGHT * 2), add=True)
 
-            for (tx, ty), texture in loaded_textures:
+            #for (tx, ty), texture in loaded_textures:
+            #    pr.draw_texture(texture.texture, tx * self.CHUNK_SIZE, ty * self.CHUNK_SIZE, pr.GREEN)
+
+            for (tx, ty), texture in self.paint_tex_grid.items():
                 pr.draw_texture(texture.texture, tx * self.CHUNK_SIZE, ty * self.CHUNK_SIZE, pr.GREEN)
 
             self.draw_runlines()
@@ -581,16 +560,6 @@ class GPS:
             pr.draw_line_ex(trailer_left, trailer_right, 1.5*self.mag/2, color)
 
             if self.get_working():
-                gx, gy = int(rot_origin[0] // self.GRID_SQUARE_SIZE), int(rot_origin[1] // self.GRID_SQUARE_SIZE)
-
-                if self.grid_vectors.get(gx, None) is None:
-                    self.grid_vectors[gx] = {}
-
-                if self.grid_vectors[gx].get(gy, None) is None:
-                    self.grid_vectors[gx][gy] = [] 
-
-                #self.grid_vectors[gx][gy].append((trailer_left, trailer_right))
-
                 self.paint(trailer_left, trailer_right, 1.5*self.mag/2, self.get_working_color(), loaded_textures)
 
             pr.end_mode_2d()
@@ -608,7 +577,7 @@ class GPS:
                 infobox.update()
 
             pr.draw_fps(10, 10)
-            pr.draw_text(f"{(self.get_deep_size(self.grid_vectors) / 1_000_000):.2f}MB vectors", 10, 30, 30, pr.GREEN)
+            pr.draw_text(f"Working width: {self.working_width / self.mag}m", 10, 30, 30, pr.GREEN)
 
             pr.end_drawing()
 

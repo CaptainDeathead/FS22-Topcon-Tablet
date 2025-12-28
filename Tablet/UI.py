@@ -271,7 +271,7 @@ class Sidebar:
             if self.settings_box.ip_addr_input.focused:
                 if char is None:
                     self.settings_box.ip_addr_input.text = self.settings_box.ip_addr_input.text[:-1]
-                elif len(self.settings_box.ip_addr_input.text) <= 10:
+                elif len(self.settings_box.ip_addr_input.text) <= 15:
                     self.settings_box.ip_addr_input.text += char
 
             elif self.settings_box.port_input.focused:
