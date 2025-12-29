@@ -1,4 +1,5 @@
 import pyray as pr
+import re
 
 from time import time
 
@@ -144,6 +145,61 @@ class SettingsBox:
         self.accept_btn.update()
         self.cancel_btn.update()
 
+class CreatePaddockBox:
+    width = 600
+    height = 350
+
+    def __init__(self, x: int, y: int, paddock_manager: object) -> None:
+        self.x = x
+        self.y = y
+        self.paddock_manager = paddock_manager
+
+        self.font = pr.Font()
+
+        self.paddock_name_input = TextInput(self.x + 220, self.y + 100, self.width - 230, 30, "", 30, pr.WHITE, pr.GRAY, pr.LIGHTGRAY)
+
+        img = pr.load_image("assets/tick.png")
+        pr.image_resize(img, img.width*2, img.height*2)
+        tex = pr.load_texture_from_image(img)
+        pr.unload_image(img)
+        self.accept_btn = Button(tex, self.x + self.width - tex.width, self.y + self.height - tex.height, pr.BLANK, pr.BLANK, self.on_accept)
+
+        img = pr.load_image("assets/cross.png")
+        pr.image_resize(img, img.width*2, img.height*2)
+        tex = pr.load_texture_from_image(img)
+        pr.unload_image(img)
+        self.cancel_btn = Button(tex, self.x, self.y + self.height - tex.height, pr.BLANK, pr.BLANK, self.on_cancel)
+
+        self.active = False
+
+    def on_cancel(self) -> None:
+        self.paddock_name_input.text = ""
+        self.active = False
+
+    def on_accept(self) -> None:
+        if self.paddock_name_input.text in self.paddock_manager.get_paddock_names():
+            self.paddock_name_input.bg_color = pr.RED
+            return
+
+        self.paddock_name_input.bg_color = pr.LIGHTGRAY
+        self.paddock_manager.create_paddock(self.paddock_name_input.text)
+
+        self.active = False
+
+    def update(self) -> None:
+        if not self.active: return
+
+        pr.draw_rectangle(self.x, self.y, self.width, self.height, pr.DARKGRAY)
+        pr.draw_rectangle(self.x, self.y, self.width, 60, pr.DARKBLUE)
+        pr.draw_text_ex(self.font, "Create Paddock", (self.x+10, self.y+10), 30, 1.0, pr.WHITE)
+
+        pr.draw_text_ex(self.font, "Paddock name:", (self.x+10, self.y + 100), 30, 1.0, pr.WHITE)
+
+        self.paddock_name_input.update()
+
+        self.accept_btn.update()
+        self.cancel_btn.update()
+
 class InfoBoxSound:
     def __init__(self):
         # This is a lazy singleton
@@ -217,7 +273,6 @@ class Sidebar:
 
         self.is_autosteer_enabled = is_autosteer_enabled
         self.set_autosteer = set_autosteer
-        #self.paddock_funcs = paddock_funcs
         self.set_ab = set_ab
         self.nudge_runlines = nudge_runlines
         self.save = save
@@ -264,26 +319,12 @@ class Sidebar:
 
             pr.unload_image(img)
 
-        paddock_sidebar_items = ["reset_paint", "create_paddock", "delete_paddock", "toggle_boundary_outline", "toggle_obstacle_outline", "toggle_outline_side"]
-        paddock_sidebar_img_names = ["paddock", "create_paddock", "delete_paddock", "boundary_outline", "obstacle_outline", "boundary_side"]
-        self.paddock_sidebar_buttons = []
-
         paddock_sidebar_x = self.screen_width - (self.BUTTON_WIDTH + self.PADDING * 2) * 2
         paddock_sidebar_y = self.buttons[self.ITEMS.index("paddock")].y
 
-        for y, item in enumerate(paddock_sidebar_items):
-            img = pr.load_image(f"assets/{paddock_sidebar_img_names[y]}.png")
-            pr.image_resize(img, self.BUTTON_WIDTH, self.BUTTON_HEIGHT)
+        self.paddock_sidebar = PaddockSidebar(paddock_sidebar_x, paddock_sidebar_y, self.on_button_click)
 
-            tex = pr.load_texture_from_image(img)
-            ry = paddock_sidebar_y + y*h
-
-            self.paddock_sidebar_buttons.append(
-                Button(tex, paddock_sidebar_x, ry, self.bg_color, self.bg_color, getattr(self, item))
-            )
-
-        self.paddock_sidebar = SubSidebar(paddock_sidebar_x, paddock_sidebar_y, self.paddock_sidebar_buttons)
-
+        self.create_paddock_box = CreatePaddockBox(self.screen_width // 2 - CreatePaddockBox.width // 2, self.screen_height // 2 - CreatePaddockBox.height // 2, self.paddock_manager)
         self.settings_box = SettingsBox(self.screen_width // 2 - SettingsBox.width // 2, self.screen_height // 2 - SettingsBox.height // 2, self.settings["ip_client"], self.settings["port_client"])
 
     def on_button_click(self, item: str) -> None:
@@ -318,6 +359,13 @@ class Sidebar:
             case "settings": self.settings_box.active = not self.settings_box.active
             case "wheel": self.set_autosteer(not self.is_autosteer_enabled())
 
+            case "reset_paint": self.reset_paint
+            case "create_paddock": self.create_paddock_box.active = not self.create_paddock_box.active
+            case "delete_paddock": self.delete_paddock
+            case "toggle_boundary_outline": self.toggle_boundary_outline
+            case "toggle_obstacle_outline": self.toggle_obstacle_outline
+            case "toggle_outline_side": self.toggle_outline_side
+
     def send_key_typing(self, char: str | None) -> None:
         if self.settings_box.active:
             if self.settings_box.ip_addr_input.focused:
@@ -332,6 +380,15 @@ class Sidebar:
                 elif len(self.settings_box.port_input.text) <= 10:
                     if char.isdigit():
                         self.settings_box.port_input.text += char
+
+        elif self.create_paddock_box.active:
+            if self.create_paddock_box.paddock_name_input.focused:
+                if char is None:
+                    self.create_paddock_box.paddock_name_input.text = self.create_paddock_box.paddock_name_input.text[:-1]
+                elif not re.compile(r'^[A-Za-z0-9_]+$').match(char): # A-Z, a-z, 0-9, _
+                    pass
+                elif len(self.create_paddock_box.paddock_name_input.text) <= 20:
+                    self.create_paddock_box.paddock_name_input.text += char
 
     def get_wheel_connected_color(self) -> pr.Color:
         if self.is_autosteer_enabled(): return pr.GREEN
@@ -350,6 +407,7 @@ class Sidebar:
 
         self.paddock_sidebar.update()
         self.settings_box.update()
+        self.create_paddock_box.update()
 
         if not self.settings_box.active:
             self.settings["ip_client"] = self.settings_box.ip
@@ -393,3 +451,28 @@ class SubSidebar:
 
         for button in self.buttons:
             button.update(False)
+
+class PaddockSidebar(SubSidebar):
+    items = ["reset_paint", "create_paddock", "delete_paddock", "toggle_boundary_outline", "toggle_obstacle_outline", "toggle_outline_side"]
+    img_names = ["paddock", "create_paddock", "delete_paddock", "boundary_outline", "obstacle_outline", "boundary_side"]
+
+    def __init__(self, x: int, y: int, onclick: object) -> None:
+        self.onclick = onclick
+
+        buttons = []
+
+        w = self.BUTTON_WIDTH + self.PADDING
+        h = self.BUTTON_HEIGHT + self.PADDING
+
+        for by, item in enumerate(self.items):
+            img = pr.load_image(f"assets/{self.img_names[by]}.png")
+            pr.image_resize(img, self.BUTTON_WIDTH, self.BUTTON_HEIGHT)
+
+            tex = pr.load_texture_from_image(img)
+            ry = y + by*h
+
+            buttons.append(
+                Button(tex, x, ry, self.bg_color, self.bg_color, lambda item=item: onclick(item))
+            )
+
+        super().__init__(x, y, buttons)
