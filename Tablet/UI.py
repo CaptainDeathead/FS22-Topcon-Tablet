@@ -4,7 +4,7 @@ import re
 from time import time
 
 class Button:
-    def __init__(self, image: pr.Texture, x: int, y: int, bg_color: pr.Color, bg_color_pressed: pr.Color, onclick: object) -> None:
+    def __init__(self, image: pr.Texture, x: int, y: int, bg_color: pr.Color, bg_color_pressed: pr.Color, onclick: object, text: str = "") -> None:
         self.image = image
 
         self.x = x
@@ -17,8 +17,12 @@ class Button:
 
         self.hidden = False
         self.selected = False
+        self.hovered = False
+        self.force_selected = False # This one cannot be changed by the `Button` class so it can be used to keep the button selected. Useful in button lists.
 
         self.onclick = onclick
+
+        self.text = text
 
     def update(self, draw_background: bool = False) -> bool:
         # Returns if it was pressed
@@ -27,26 +31,32 @@ class Button:
 
         self.draw(draw_background)
 
-        if not pr.is_mouse_button_pressed(0): return
+        self.hovered = False
 
         pos = pr.get_mouse_position()
         if pos.x > self.x and pos.x < self.x + self.width and pos.y > self.y and pos.y < self.y + self.height:
-            self.onclick()
-            self.selected = True
+            self.hovered = True
         else:
             self.selected = False
+
+        if not pr.is_mouse_button_pressed(0): return
+
+        if self.hovered:
+            self.onclick()
+            self.selected = True
 
         return self.selected
 
     def draw(self, draw_background: bool) -> None:
         if draw_background:
             bg_color = self.bg_color
-            if self.selected:
+            if (self.selected or self.hovered or self.force_selected) and self.bg_color_pressed is not None:
                 bg_color = self.bg_color_pressed
 
             pr.draw_rectangle(self.x, self.y, self.width, self.height, bg_color)
 
         pr.draw_texture(self.image, self.x, self.y, pr.WHITE)
+        pr.draw_text(self.text, self.x + 5, self.y + 5, 15, pr.WHITE)
 
 class TextInput:
     def __init__(self, x: int, y: int, width: int, height: int, text: str, font_size: int, color: pr.Color, bg_color: pr.Color, bg_selected_color: pr.Color) -> None:
@@ -313,8 +323,13 @@ class Sidebar:
             else:
                 ry = y*h
 
+            hover_color = pr.DARKGRAY
+
+            if item == "wheel":
+                hover_color = None
+
             self.buttons.append(
-                Button(tex, self.screen_width - w, ry, self.bg_color, self.bg_color, lambda item=item: self.on_button_click(item))
+                Button(tex, self.screen_width - w, ry, self.bg_color, hover_color, lambda item=item: self.on_button_click(item))
             )
 
             pr.unload_image(img)
@@ -322,10 +337,25 @@ class Sidebar:
         paddock_sidebar_x = self.screen_width - (self.BUTTON_WIDTH + self.PADDING * 2) * 2
         paddock_sidebar_y = self.buttons[self.ITEMS.index("paddock")].y
 
+        self.paddock_dropdown_x = self.screen_width - (self.BUTTON_WIDTH + self.PADDING * 2) * 2 - (PaddockDropdownSidebar.BUTTON_WIDTH + self.PADDING * 2)
+        self.paddock_dropdown_y = self.buttons[self.ITEMS.index("paddock")].y
+
         self.paddock_sidebar = PaddockSidebar(paddock_sidebar_x, paddock_sidebar_y, self.on_button_click)
+        self.paddock_dropdown = None
 
         self.create_paddock_box = CreatePaddockBox(self.screen_width // 2 - CreatePaddockBox.width // 2, self.screen_height // 2 - CreatePaddockBox.height // 2, self.paddock_manager)
         self.settings_box = SettingsBox(self.screen_width // 2 - SettingsBox.width // 2, self.screen_height // 2 - SettingsBox.height // 2, self.settings["ip_client"], self.settings["port_client"])
+
+    def on_paddock_dropdown_close(self, on_finish_func: object) -> None:
+        self.paddock_dropdown = None
+        self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("delete_paddock")].force_selected = False
+
+        on_finish_func()
+
+    def show_paddock_dropdown(self, on_finish: object) -> None:
+        if len(self.paddock_manager.get_paddock_names()) == 0: return
+
+        self.paddock_dropdown = PaddockDropdownSidebar(self.paddock_dropdown_x, self.paddock_dropdown_y, self.paddock_manager, lambda paddock_name: self.on_paddock_dropdown_close(lambda: on_finish(paddock_name)))
 
     def on_button_click(self, item: str) -> None:
         print(f"Button: {item} clicked!")
@@ -335,8 +365,23 @@ class Sidebar:
 
         pr.play_sound(self.click_sound)
 
+        if self.paddock_dropdown is not None and item != "delete_paddock":
+            self.paddock_dropdown = None
+            self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("delete_paddock")].force_selected = False
+
         match item:
-            case "paddock": self.paddock_sidebar.toggle_hidden()
+            case "paddock":
+                if self.paddock_dropdown is not None:
+                    self.paddock_dropdown = None
+                    self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("delete_paddock")].force_selected = False
+
+                if self.paddock_sidebar.hidden:
+                    self.buttons[self.ITEMS.index("paddock")].force_selected = True
+                else:
+                    self.buttons[self.ITEMS.index("paddock")].force_selected = False
+
+                self.paddock_sidebar.toggle_hidden()
+
             case "A":
                 self.a_pressed = not self.a_pressed
 
@@ -359,9 +404,20 @@ class Sidebar:
             case "settings": self.settings_box.active = not self.settings_box.active
             case "wheel": self.set_autosteer(not self.is_autosteer_enabled())
 
-            case "reset_paint": self.reset_paint
+            case "reset_paint": self.reset_paint()
             case "create_paddock": self.create_paddock_box.active = not self.create_paddock_box.active
-            case "delete_paddock": self.delete_paddock
+            case "delete_paddock":
+                if self.paddock_dropdown is not None:
+                    self.paddock_dropdown = None
+                    self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("delete_paddock")].force_selected = False
+                    return
+
+                self.paddock_dropdown_y = self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("delete_paddock")].y
+                self.show_paddock_dropdown(self.delete_paddock)
+
+                if self.paddock_dropdown is not None:
+                    self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("delete_paddock")].force_selected = True
+
             case "toggle_boundary_outline": self.toggle_boundary_outline
             case "toggle_obstacle_outline": self.toggle_obstacle_outline
             case "toggle_outline_side": self.toggle_outline_side
@@ -403,9 +459,13 @@ class Sidebar:
                 button.bg_color = self.get_wheel_connected_color()
                 button.update(True)
             else:
-                button.update(False)
+                button.update(True)
 
         self.paddock_sidebar.update()
+
+        if self.paddock_dropdown is not None:
+            self.paddock_dropdown.update()
+
         self.settings_box.update()
         self.create_paddock_box.update()
 
@@ -450,7 +510,7 @@ class SubSidebar:
         pr.draw_rectangle(self.x, self.y, self.width, self.height, self.bg_color)
 
         for button in self.buttons:
-            button.update(False)
+            button.update(True)
 
 class PaddockSidebar(SubSidebar):
     items = ["reset_paint", "create_paddock", "delete_paddock", "toggle_boundary_outline", "toggle_obstacle_outline", "toggle_outline_side"]
@@ -472,7 +532,37 @@ class PaddockSidebar(SubSidebar):
             ry = y + by*h
 
             buttons.append(
-                Button(tex, x, ry, self.bg_color, self.bg_color, lambda item=item: onclick(item))
+                Button(tex, x + self.PADDING, ry, self.bg_color, pr.DARKGRAY, lambda item=item: onclick(item))
             )
 
         super().__init__(x, y, buttons)
+
+class PaddockDropdownSidebar(SubSidebar):
+    BUTTON_WIDTH = 200
+    BUTTON_HEIGHT = 20
+
+    bg_color = pr.DARKGRAY
+
+    def __init__(self, x: int, y: int, paddock_manager: object, on_paddock_select: object) -> None:
+        self.paddock_manager = paddock_manager
+        self.on_paddock_select = on_paddock_select
+
+        buttons = []
+
+        w = self.BUTTON_WIDTH + self.PADDING
+        h = self.BUTTON_HEIGHT + self.PADDING
+
+        for by, paddock_name in enumerate(self.paddock_manager.get_paddock_names()):
+            tex = pr.Texture()
+            tex.width = self.BUTTON_WIDTH
+            tex.height = self.BUTTON_HEIGHT
+
+            ry = y + by*h
+
+            buttons.append(
+                Button(tex, x + self.PADDING, ry, self.bg_color, pr.LIGHTGRAY, lambda paddock_name=paddock_name: self.on_paddock_select(paddock_name), text=paddock_name)
+            )
+
+        super().__init__(x, y, buttons)
+
+        self.hidden = False

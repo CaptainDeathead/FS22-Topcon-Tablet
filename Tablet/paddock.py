@@ -157,6 +157,7 @@ class PaddockManager:
             self.paddocks.append(Paddock(pdk_dir, os.path.join(".paddock-data", pdk_dir), self.infoboxes, self.remove_infobox))
 
     def get_paddock_names(self) -> list[str]:
+        #return ["WabbingHills2025", "e", "B08", "OutbackCHOOKYARDpdk"]
         return [paddock.name for paddock in self.paddocks]
 
     def load_paddock(self, paddock_name: str) -> None:
