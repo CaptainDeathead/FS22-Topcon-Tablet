@@ -9,6 +9,8 @@ from shapely import Polygon
 from UI import InfoBox
 
 class Paddock:
+    CHUNK_SIZE = 1000
+
     def __init__(self, name: str, file_path: str, infoboxes: list, remove_infobox: object) -> None:
         self.name = name
         self.file_path = file_path
@@ -104,7 +106,6 @@ class Paddock:
 
     def save(self) -> None:
         # This should never be called without the `load` method being called, that is why directories are assumed to be created here
-
         paint_path = Path(self.file_path, ".paint-data")
         run_path = Path(self.file_path, ".run-data")
 
@@ -131,8 +132,11 @@ class Paddock:
             with open(os.path.join(obstacles_path, name), 'w') as f:
                 f.write(str(obstacle.boundary))
 
+        self.infoboxes.append(InfoBox(f"Data written for {self.name} paddock.", 'info', self.remove_infobox))
+
     def reset_paint(self) -> None:
         self.paint_tex_grid = {}
+        self.infoboxes.append(InfoBox(f"Paint data cleared for {self.name} paddock.", 'warning', self.remove_infobox))
 
 class OutlineSide:
     LEFT = False
@@ -165,8 +169,8 @@ class PaddockManager:
 
         if len(self.paddocks) == 0:
             self.create_paddock("default")
-            self.load_paddock("default")
-            self.save()
+
+        self.load_paddock("default")
 
     def save(self) -> None:
         """Only saves the active paddock. Does not sync creations or deletions by itself."""
@@ -188,6 +192,8 @@ class PaddockManager:
         self.active_paddock = self.paddocks[paddock_names.index(paddock_name)]
         self.active_paddock.load()
 
+        self.infoboxes.append(InfoBox(f"Switched to {self.active_paddock.name} paddock.", 'info', self.remove_infobox))
+
     def save_active_paddock(self) -> None:
         if self.active_paddock is not None:
             self.active_paddock.save()
@@ -208,8 +214,10 @@ class PaddockManager:
         new_paddock = Paddock(name, new_paddock_path, self.infoboxes, self.remove_infobox)
 
         self.paddocks.append(new_paddock)
-        self.active_paddock = new_paddock
+        self.load_paddock(name)
         self.save()
+
+        self.infoboxes.append(InfoBox(f"Created {self.active_paddock.name} paddock.", 'info', self.remove_infobox))
 
     def delete_paddock(self, name: str) -> None:
         paddock_names = self.get_paddock_names()
@@ -231,7 +239,7 @@ class PaddockManager:
         shutil.rmtree(paddock.file_path)
         self.paddocks.remove(paddock)
 
-        text = f"Deleted paddock: {self.active_paddock.name}!"
+        text = f"Deleted paddock: {name}!"
         print(text)
         self.infoboxes.append(InfoBox(text, 'warning', self.remove_infobox))
 

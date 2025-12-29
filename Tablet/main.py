@@ -105,7 +105,6 @@ class GPS:
 
     PAINT_CYCLES = ((False, False), (True, False), (False, True), (True, True)) # (lowered, on) required
     GRID_SQUARE_SIZE = 100
-    CHUNK_SIZE = 1000
 
     def __init__(self) -> None:
         self.settings = json.loads(open("settings.json", 'r').read())
@@ -154,8 +153,6 @@ class GPS:
         self.camera.zoom = 1.0
         self.camera.rotation = 0.0
 
-        self.paint_tex_grid = {}
-        
         self.load_map_information()
 
         self.vehicle = Vehicle()
@@ -166,6 +163,14 @@ class GPS:
         self.main()
 
         pr.close_window()
+
+    @property
+    def paint_tex_grid(self) -> dict[str, pr.RenderTexture]:
+        return self.paddock_manager.active_paddock.paint_tex_grid
+
+    @property
+    def CHUNK_SIZE(self) -> int:
+        return 1000
 
     def load_settings(self) -> None:
         try:
@@ -290,6 +295,8 @@ class GPS:
         # This assumes that all filenames in the directory are paint data files. Some data could be changed by the user or corrupted in some way. More robust error handling should be added.
         # The warning my come up if there is no data which could be confusing.
 
+        return
+
         if os.path.isdir(".paint-data"):
             for filename in os.listdir(".paint-data"):
                 image = pr.load_image(f".paint-data/{filename}")
@@ -324,9 +331,15 @@ class GPS:
 
     def save(self) -> None:
         self.infoboxes.append(InfoBox("Saving data...", 'warning', self.remove_infobox))
-
         self.infoboxes[-1].update()
         pr.end_drawing()
+
+        self.paddock_manager.save()
+
+        pr.begin_drawing()
+        self.infoboxes.append(InfoBox("Data save successful!", 'info', self.remove_infobox))
+
+        return
 
         shutil.rmtree(".paint-data", True)
         os.mkdir(".paint-data")

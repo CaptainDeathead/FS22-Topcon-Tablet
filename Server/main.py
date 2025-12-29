@@ -111,7 +111,7 @@ class Server:
 
             try:
                 s.bind((self.HOST, self.PORT))
-                print("Server binded.")
+                print(f"Server binded at {self.HOST}:{self.PORT}.")
             except Exception as e:
                 messagebox.showerror("Failed to start server!", "Failed to bind server! Is it already running?")
 

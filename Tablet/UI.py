@@ -226,7 +226,7 @@ class InfoBox:
     DURATION = 5
     AUDIO_DELAY = 1 # Delay before playing audio
 
-    WIDTH = 800
+    WIDTH = 1000
     HEIGHT = 100
 
     FONT_SIZE = 40
