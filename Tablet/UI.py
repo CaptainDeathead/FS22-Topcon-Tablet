@@ -235,6 +235,8 @@ class InfoBox:
         self.screen_width = pr.get_screen_width()
         self.screen_height = pr.get_screen_height()
 
+        self.y = 0
+
         self.text = text
         self.start_time = time()
 
@@ -264,8 +266,8 @@ class InfoBox:
             self.sound.play()
             self.played_sound = True
         
-        pr.draw_rectangle(int(self.screen_width / 2 - self.WIDTH / 2), 0, self.WIDTH, self.HEIGHT, self.color)
-        pr.draw_text(self.text, int(self.screen_width / 2 - self.text_width / 2), 30, self.FONT_SIZE, pr.WHITE)
+        pr.draw_rectangle(int(self.screen_width / 2 - self.WIDTH / 2), self.y, self.WIDTH, self.HEIGHT, self.color)
+        pr.draw_text(self.text, int(self.screen_width / 2 - self.text_width / 2), self.y + 30, self.FONT_SIZE, pr.WHITE)
 
 class Sidebar:
     ITEMS = ["paddock", "A", "nudge", "save", "zoom-in", "zoom-out", "settings", "wheel"]
@@ -289,6 +291,7 @@ class Sidebar:
 
         self.paddock_manager = paddock_manager
 
+        self.select_paddock = self.paddock_manager.load_paddock
         self.reset_paint = self.paddock_manager.reset_paint
         self.create_paddock = self.paddock_manager.create_paddock
         self.delete_paddock = self.paddock_manager.delete_paddock
@@ -348,6 +351,7 @@ class Sidebar:
 
     def on_paddock_dropdown_close(self, on_finish_func: object) -> None:
         self.paddock_dropdown = None
+        self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("select_paddock")].force_selected = False
         self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("delete_paddock")].force_selected = False
 
         on_finish_func()
@@ -369,10 +373,15 @@ class Sidebar:
             self.paddock_dropdown = None
             self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("delete_paddock")].force_selected = False
 
+        if self.paddock_dropdown is not None and item != "select_paddock":
+            self.paddock_dropdown = None
+            self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("select_paddock")].force_selected = False
+
         match item:
             case "paddock":
                 if self.paddock_dropdown is not None:
                     self.paddock_dropdown = None
+                    self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("select_paddock")].force_selected = False
                     self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("delete_paddock")].force_selected = False
 
                 if self.paddock_sidebar.hidden:
@@ -403,6 +412,18 @@ class Sidebar:
             case "zoom-out": self.zoom_out()
             case "settings": self.settings_box.active = not self.settings_box.active
             case "wheel": self.set_autosteer(not self.is_autosteer_enabled())
+
+            case "select_paddock":
+                if self.paddock_dropdown is not None:
+                    self.paddock_dropdown = None
+                    self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("select_paddock")].force_selected = False
+                    return
+                
+                self.paddock_dropdown_y = self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("select_paddock")].y
+                self.show_paddock_dropdown(self.select_paddock)
+
+                if self.paddock_dropdown is not None:
+                    self.paddock_sidebar.buttons[self.paddock_sidebar.items.index("select_paddock")].force_selected = True
 
             case "reset_paint": self.reset_paint()
             case "create_paddock": self.create_paddock_box.active = not self.create_paddock_box.active
@@ -513,8 +534,8 @@ class SubSidebar:
             button.update(True)
 
 class PaddockSidebar(SubSidebar):
-    items = ["reset_paint", "create_paddock", "delete_paddock", "toggle_boundary_outline", "toggle_obstacle_outline", "toggle_outline_side"]
-    img_names = ["paddock", "create_paddock", "delete_paddock", "boundary_outline", "obstacle_outline", "boundary_side"]
+    items = ["select_paddock", "reset_paint", "create_paddock", "delete_paddock", "toggle_boundary_outline", "toggle_obstacle_outline", "toggle_outline_side"]
+    img_names = ["select_paddock", "erase", "create_paddock", "delete_paddock", "boundary_outline", "obstacle_outline", "boundary_side"]
 
     def __init__(self, x: int, y: int, onclick: object) -> None:
         self.onclick = onclick

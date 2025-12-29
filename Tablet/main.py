@@ -583,7 +583,8 @@ class GPS:
                 self.save()
                 return
 
-            for infobox in self.infoboxes:
+            for i, infobox in enumerate(self.infoboxes):
+                infobox.y = infobox.HEIGHT * i
                 infobox.update()
 
             pr.draw_fps(10, 10)

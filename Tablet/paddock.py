@@ -47,6 +47,8 @@ class Paddock:
             print(f"Paint data doesn't exist! Previous paint data cleared.")
             self.infoboxes.append(InfoBox("Paint data doesn't exist!", 'warning', self.remove_infobox))
 
+            os.mkdir(paint_path)
+
         # AB data could also be changed or corrupted. More robust error handling should be implemented here too.
         self.runlines = {}
         run_path = Path(self.file_path, ".run-data")
@@ -59,13 +61,15 @@ class Paddock:
         else:
             print(f"AB data doesn't exist! AB data reset.")
             self.infoboxes.append(InfoBox("AB data doesn't exist!", 'warning', self.remove_infobox))
+
+            os.mkdir(run_path)
             
         self.boundaries = {}
         self.obstacles = {}
 
         root_path = Path(self.file_path, ".boundary-data")
-        boundaries_path = os.path.join(root_path, "boundaries")
-        obstacles_path = os.path.join(root_path, "obstacles")
+        boundaries_path = Path(os.path.join(root_path, "boundaries"))
+        obstacles_path = Path(os.path.join(root_path, "obstacles"))
 
         if root_path.exists():
             if boundaries_path.exists():
@@ -127,6 +131,9 @@ class Paddock:
             with open(os.path.join(obstacles_path, name), 'w') as f:
                 f.write(str(obstacle.boundary))
 
+    def reset_paint(self) -> None:
+        self.paint_tex_grid = {}
+
 class OutlineSide:
     LEFT = False
     RIGHT = True
@@ -156,8 +163,18 @@ class PaddockManager:
         for pdk_dir in os.listdir(".paddock-data"):
             self.paddocks.append(Paddock(pdk_dir, os.path.join(".paddock-data", pdk_dir), self.infoboxes, self.remove_infobox))
 
+        if len(self.paddocks) == 0:
+            self.create_paddock("default")
+            self.load_paddock("default")
+            self.save()
+
+    def save(self) -> None:
+        """Only saves the active paddock. Does not sync creations or deletions by itself."""
+
+        if self.active_paddock is not None:
+            self.active_paddock.save()
+
     def get_paddock_names(self) -> list[str]:
-        #return ["WabbingHills2025", "e", "B08", "OutbackCHOOKYARDpdk"]
         return [paddock.name for paddock in self.paddocks]
 
     def load_paddock(self, paddock_name: str) -> None:
@@ -186,9 +203,13 @@ class PaddockManager:
             raise Exception(f"Paddock name ({name}) already exists!")
 
         new_paddock_path = Path(".paddock-data", name)
+        os.mkdir(new_paddock_path)
+
         new_paddock = Paddock(name, new_paddock_path, self.infoboxes, self.remove_infobox)
 
         self.paddocks.append(new_paddock)
+        self.active_paddock = new_paddock
+        self.save()
 
     def delete_paddock(self, name: str) -> None:
         paddock_names = self.get_paddock_names()
@@ -196,7 +217,23 @@ class PaddockManager:
         if name not in paddock_names:
             raise Exception(f"Paddock name ({name}) does not exist!")
 
-        self.paddocks.pop(paddock_names.index(name))
+        if name == "default": return
+
+        paddock = self.paddocks[paddock_names.index(name)]
+
+        if self.active_paddock is paddock:
+            self.active_paddock = self.paddocks[0]
+
+            text = f"Active paddock set to: {self.active_paddock.name}"
+            print(text)
+            self.infoboxes.append(InfoBox(text, 'warning', self.remove_infobox))
+
+        shutil.rmtree(paddock.file_path)
+        self.paddocks.remove(paddock)
+
+        text = f"Deleted paddock: {self.active_paddock.name}!"
+        print(text)
+        self.infoboxes.append(InfoBox(text, 'warning', self.remove_infobox))
 
     def is_marking_boundary_outline(self) -> bool:
         """Returns: `True` if it is marking a boundary, `False` if not."""
