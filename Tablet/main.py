@@ -6,6 +6,7 @@ import os
 import sys
 import shutil
 
+from paddock import PaddockManager, Paddock
 from course import CourseManager
 
 from UI import Sidebar, Button, InfoBox
@@ -140,12 +141,14 @@ class GPS:
         self.working_width = self.DEFAULT_WORK_WIDTH
         self.paint_cycle_index = 3
 
+        self.paddock_manager = PaddockManager(self.infoboxes, self.remove_infobox)
         self.course_manager = CourseManager(self.get_working_width)
         
-        #self.autosteer_engage_sound = pr.load_sound("assets/sounds/gpsEngage.mp3")
-        #self.autosteer_disengage_sound = pr.load_sound("assets/sounds/gpsDisengage.ogg")
         self.autosteer_engage_sound = pr.load_sound("assets/sounds/SteeringEngagedAlarm.wav")
         self.autosteer_disengage_sound = pr.load_sound("assets/sounds/SteeringDisengagedAlarm.wav")
+
+        pr.set_sound_volume(self.autosteer_engage_sound, 0.25)
+        pr.set_sound_volume(self.autosteer_disengage_sound, 0.25)
 
         self.camera = pr.Camera2D()
         self.camera.zoom = 1.0
@@ -158,7 +161,7 @@ class GPS:
         self.vehicle = Vehicle()
         self.trailer = Trailer()
 
-        self.sidebar = Sidebar(self.settings, self.is_autosteer_enabled, self.set_autosteer, self.reset_paint, self.set_ab, self.nudge_runlines, self.save, self.zoom_in, self.zoom_out)
+        self.sidebar = Sidebar(self.settings, self.is_autosteer_enabled, self.set_autosteer, self.paddock_manager, self.set_ab, self.nudge_runlines, self.save, self.zoom_in, self.zoom_out)
 
         self.main()
 
@@ -184,9 +187,16 @@ class GPS:
 
     def set_autosteer(self, enabled: bool) -> None:
         if self.course_manager.autosteer_enabled and not enabled:
+            if pr.is_sound_playing(self.autosteer_engage_sound):
+                pr.stop_sound(self.autosteer_engage_sound)
+
             pr.play_sound(self.autosteer_disengage_sound)
             self.infoboxes.append(InfoBox("Autosteer disengaged.", 'info', self.remove_infobox))
+
         elif not self.course_manager.autosteer_enabled and enabled:
+            if pr.is_sound_playing(self.autosteer_disengage_sound):
+                pr.stop_sound(self.autosteer_disengage_sound)
+
             pr.play_sound(self.autosteer_engage_sound)
             self.infoboxes.append(InfoBox("Autosteer engaged.", 'info', self.remove_infobox))
 

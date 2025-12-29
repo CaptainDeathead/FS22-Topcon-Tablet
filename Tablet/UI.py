@@ -19,8 +19,10 @@ class Button:
 
         self.onclick = onclick
 
-    def update(self, draw_background: bool = False) -> None:
-        if self.hidden: return
+    def update(self, draw_background: bool = False) -> bool:
+        # Returns if it was pressed
+
+        if self.hidden: return False
 
         self.draw(draw_background)
 
@@ -32,6 +34,8 @@ class Button:
             self.selected = True
         else:
             self.selected = False
+
+        return self.selected
 
     def draw(self, draw_background: bool) -> None:
         if draw_background:
@@ -140,6 +144,18 @@ class SettingsBox:
         self.accept_btn.update()
         self.cancel_btn.update()
 
+class InfoBoxSound:
+    def __init__(self):
+        # This is a lazy singleton
+        # I chose to use this because the infobox sounds can be stopped now so they dont overlap. It cannot be a normal (eager) singleton because that is created at runtime before audio is initialized
+        if not hasattr(self.__class__, "sound"):
+            self.__class__.sound = pr.load_sound("assets/sounds/gpsAlert.ogg")
+
+    def play(self):
+        if pr.is_sound_playing(self.sound):
+            pr.stop_sound(self.sound)
+        pr.play_sound(self.sound)
+
 class InfoBox:
     DURATION = 5
     AUDIO_DELAY = 1 # Delay before playing audio
@@ -157,7 +173,7 @@ class InfoBox:
         self.start_time = time()
 
         self.remove_infobox = remove_infobox
-        self.sound = pr.load_sound("assets/sounds/gpsAlert.ogg")
+        self.sound = InfoBoxSound()
         self.played_sound = False
 
         self.info_type = info_type
@@ -179,7 +195,7 @@ class InfoBox:
             self.remove_infobox(self)
             return
         elif time() - self.start_time >= self.AUDIO_DELAY and not self.played_sound:
-            pr.play_sound(self.sound)
+            self.sound.play()
             self.played_sound = True
         
         pr.draw_rectangle(int(self.screen_width / 2 - self.WIDTH / 2), 0, self.WIDTH, self.HEIGHT, self.color)
@@ -193,7 +209,7 @@ class Sidebar:
 
     PADDING = 5
 
-    def __init__(self, settings: dict[str, any], is_autosteer_enabled: object, set_autosteer: object, reset_paint: object, set_ab: object, nudge_runlines: object, save: object, zoom_in: object, zoom_out: object) -> None:
+    def __init__(self, settings: dict[str, any], is_autosteer_enabled: object, set_autosteer: object, paddock_manager: object, set_ab: object, nudge_runlines: object, save: object, zoom_in: object, zoom_out: object) -> None:
         self.screen_width = pr.get_screen_width()
         self.screen_height = pr.get_screen_height()
 
@@ -201,10 +217,19 @@ class Sidebar:
 
         self.is_autosteer_enabled = is_autosteer_enabled
         self.set_autosteer = set_autosteer
-        self.reset_paint = reset_paint
+        #self.paddock_funcs = paddock_funcs
         self.set_ab = set_ab
         self.nudge_runlines = nudge_runlines
         self.save = save
+
+        self.paddock_manager = paddock_manager
+
+        self.reset_paint = self.paddock_manager.reset_paint
+        self.create_paddock = self.paddock_manager.create_paddock
+        self.delete_paddock = self.paddock_manager.delete_paddock
+        self.toggle_boundary_outline = self.paddock_manager.toggle_marking_boundary_outline
+        self.toggle_obstacle_outline = self.paddock_manager.toggle_marking_obstacle_outline
+        self.toggle_outline_side = self.paddock_manager.toggle_outline_side
 
         self.a_pressed = False
 
@@ -217,6 +242,8 @@ class Sidebar:
 
         w = self.BUTTON_WIDTH + self.PADDING
         h = self.BUTTON_HEIGHT + self.PADDING
+
+        self.click_sound = pr.load_sound("assets/sounds/BtnRelease.wav")
 
         for y, item in enumerate(self.ITEMS):
             img = pr.load_image(f"assets/{item}.png")
@@ -237,13 +264,38 @@ class Sidebar:
 
             pr.unload_image(img)
 
+        paddock_sidebar_items = ["reset_paint", "create_paddock", "delete_paddock", "toggle_boundary_outline", "toggle_obstacle_outline", "toggle_outline_side"]
+        paddock_sidebar_img_names = ["paddock", "create_paddock", "delete_paddock", "boundary_outline", "obstacle_outline", "boundary_side"]
+        self.paddock_sidebar_buttons = []
+
+        paddock_sidebar_x = self.screen_width - (self.BUTTON_WIDTH + self.PADDING * 2) * 2
+        paddock_sidebar_y = self.buttons[self.ITEMS.index("paddock")].y
+
+        for y, item in enumerate(paddock_sidebar_items):
+            img = pr.load_image(f"assets/{paddock_sidebar_img_names[y]}.png")
+            pr.image_resize(img, self.BUTTON_WIDTH, self.BUTTON_HEIGHT)
+
+            tex = pr.load_texture_from_image(img)
+            ry = paddock_sidebar_y + y*h
+
+            self.paddock_sidebar_buttons.append(
+                Button(tex, paddock_sidebar_x, ry, self.bg_color, self.bg_color, getattr(self, item))
+            )
+
+        self.paddock_sidebar = SubSidebar(paddock_sidebar_x, paddock_sidebar_y, self.paddock_sidebar_buttons)
+
         self.settings_box = SettingsBox(self.screen_width // 2 - SettingsBox.width // 2, self.screen_height // 2 - SettingsBox.height // 2, self.settings["ip_client"], self.settings["port_client"])
 
     def on_button_click(self, item: str) -> None:
         print(f"Button: {item} clicked!")
 
+        if pr.is_sound_playing(self.click_sound):
+            pr.stop_sound(self.click_sound)
+
+        pr.play_sound(self.click_sound)
+
         match item:
-            case "paddock": self.reset_paint()
+            case "paddock": self.paddock_sidebar.toggle_hidden()
             case "A":
                 self.a_pressed = not self.a_pressed
 
@@ -296,8 +348,48 @@ class Sidebar:
             else:
                 button.update(False)
 
+        self.paddock_sidebar.update()
         self.settings_box.update()
 
         if not self.settings_box.active:
             self.settings["ip_client"] = self.settings_box.ip
             self.settings["port_client"] = self.settings_box.port
+
+class SubSidebar:
+    BUTTON_WIDTH = 60
+    BUTTON_HEIGHT = 60
+
+    PADDING = 5
+
+    bg_color = pr.Color(100, 100, 100, 255)
+
+    def __init__(self, x: int, y: int, buttons: list[Button]) -> None:
+        self.x = x
+        self.y = y
+
+        self.buttons = buttons
+
+        self.width = self.BUTTON_WIDTH + self.PADDING * 2
+        self.height = len(self.buttons) * self.BUTTON_HEIGHT + (len(self.buttons) - 1) * self.PADDING + self.PADDING
+
+        self.hidden = True
+
+    def hide(self) -> None:
+        self.hidden = True
+
+    def show(self) -> None:
+        self.hidden = False
+
+    def toggle_hidden(self) -> None:
+        if self.hidden:
+            self.show()
+        else:
+            self.hide()
+
+    def update(self) -> None:
+        if self.hidden: return
+
+        pr.draw_rectangle(self.x, self.y, self.width, self.height, self.bg_color)
+
+        for button in self.buttons:
+            button.update(False)
