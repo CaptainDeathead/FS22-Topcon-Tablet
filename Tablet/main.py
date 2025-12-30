@@ -6,7 +6,7 @@ import os
 import sys
 import shutil
 
-from paddock import PaddockManager, Paddock
+from paddock import PaddockManager, Paddock, OutlineSide
 from course import CourseManager
 
 from UI import Sidebar, Button
@@ -140,6 +140,8 @@ class GPS:
 
         self.working_width = self.DEFAULT_WORK_WIDTH
         self.paint_cycle_index = 3
+
+        self.last_boundary_rec_pos = [0, 0]
 
         self.paddock_manager = PaddockManager(self.infoboxes, self.remove_infobox)
         self.course_manager = CourseManager(self.get_working_width)
@@ -518,6 +520,10 @@ class GPS:
             pr.draw_line_ex((start[0] - tx * self.CHUNK_SIZE, self.CHUNK_SIZE - (start[1] - ty * self.CHUNK_SIZE)), (end[0] - tx * self.CHUNK_SIZE, self.CHUNK_SIZE - (end[1] - ty * self.CHUNK_SIZE)), width, color)
             pr.end_texture_mode()
 
+    def draw_lined_polygon(self, poly: list[tuple[float, float]]) -> None:
+        for i, point in enumerate(poly[:-1]):
+            pr.draw_line_ex(point, poly[i+1], 1.0, pr.BLUE)
+
     def main(self) -> None:
         while not pr.window_should_close():
             pr.begin_drawing()
@@ -544,6 +550,11 @@ class GPS:
 
             for (tx, ty), texture in self.paint_tex_grid.items():
                 pr.draw_texture(texture.texture, tx * self.CHUNK_SIZE, ty * self.CHUNK_SIZE, pr.GREEN)
+
+            if self.paddock_manager.active_paddock is not None:
+                for name, piece in self.paddock_manager.active_paddock.boundaries.items():
+                    self.draw_lined_polygon(list(piece.exterior.coords))
+                    #print((piece.area / self.mag**2)/10000)
 
             self.draw_runlines()
 
@@ -582,6 +593,18 @@ class GPS:
             color = self.get_working_color()
             color.a = 255
             pr.draw_line_ex(trailer_left, trailer_right, 1.5*self.mag/2, color)
+
+            if dist((self.vehicle.x, self.vehicle.y), self.last_boundary_rec_pos) > 5:
+                if self.paddock_manager.active_paddock is not None:
+                    if self.paddock_manager.active_paddock.marking_boundary:
+                        if self.paddock_manager.outline_side == OutlineSide.LEFT:
+                            self.paddock_manager.active_paddock.new_boundary.append(trailer_left)
+                            self.last_boundary_rec_pos[0] = trailer_left[0]
+                            self.last_boundary_rec_pos[1] = trailer_left[1]
+                        else:
+                            self.paddock_manager.active_paddock.new_boundary.append(trailer_right)
+                            self.last_boundary_rec_pos[0] = trailer_right[0]
+                            self.last_boundary_rec_pos[1] = trailer_right[1]
 
             if self.get_working():
                 self.paint(trailer_left, trailer_right, 1.5*self.mag/2, self.get_working_color(), loaded_textures)

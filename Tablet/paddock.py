@@ -26,6 +26,12 @@ class Paddock:
         self.marking_boundary = False
         self.marking_obstacle = False
 
+        self.new_boundary = []
+
+    @property
+    def ha(self) -> float:
+        return sum([(piece.area / self.mag ** 2) / 10000] for name, piece in self.boundaries.items())
+
     def load(self) -> None:
         self.paint_tex_grid = {}
         paint_path = Path(self.file_path, ".paint-data")
@@ -124,13 +130,13 @@ class Paddock:
             with open(os.path.join(run_path, name), "w") as f:
                 f.write(f"{run_dir},{run_offset}")
 
-        for name, boundary in self.boundaries:
+        for name, boundary in self.boundaries.items():
             with open(os.path.join(boundaries_path, name), 'w') as f:
-                f.write(str(boundary.boundary))
+                f.write(str(list(boundary.exterior.coords)))
 
-        for name, obstacle in self.obstacles:
+        for name, obstacle in self.obstacles.items():
             with open(os.path.join(obstacles_path, name), 'w') as f:
-                f.write(str(obstacle.boundary))
+                f.write(str(list(obstacle.exterior.coords)))
 
         self.infoboxes.append(InfoBox(f"Data written for {self.name} paddock.", 'info', self.remove_infobox))
 
@@ -180,6 +186,31 @@ class PaddockManager:
 
     def get_paddock_names(self) -> list[str]:
         return [paddock.name for paddock in self.paddocks]
+
+    def get_piece_names(self) -> list[str]:
+        if self.active_paddock is None:
+            return []
+
+        return [name for name, piece_data in self.active_paddock.boundaries.items()]
+
+    def create_piece(self, name: str) -> None:
+        if self.active_paddock is None: return
+
+        if name in self.get_piece_names():
+            raise Exception(f"Piece name ({name}) already exists!")
+
+        self.active_paddock.boundaries[name] = Polygon(self.active_paddock.new_boundary).simplify(1.5, True)
+        self.active_paddock.new_boundary = []
+
+        self.active_paddock.marking_boundary = False
+
+    def delete_piece(self, name: str) -> None:
+        if self.active_paddock is None: return
+
+        if name not in self.get_piece_names():
+            raise Exception(f"Piece {name} is not found in paddock {self.active_paddock.name} data!")
+
+        del self.active_paddock.boundaries[name]
 
     def load_paddock(self, paddock_name: str) -> None:
         paddock_names = self.get_paddock_names()
@@ -249,8 +280,14 @@ class PaddockManager:
 
         return self.active_paddock.marking_boundary
 
-    def toggle_marking_boundary_outline(self) -> None:
+    def start_marking_boundary_outline(self) -> None:
         if self.active_paddock is None: return
+
+        if self.active_paddock.marking_boundary:
+            raise Exception("Already marking a paddock boundary!")
+
+        self.active_paddock.marking_boundary = True
+        self.active_paddock.new_boundary = []
 
     def is_marking_obstacle_outline(self) -> bool:
         """Returns: `True` if it is marking an obstacle, `False` if not."""
@@ -260,6 +297,8 @@ class PaddockManager:
 
     def toggle_marking_obstacle_outline(self) -> None:
         if self.active_paddock is None: return
+
+        self.active_paddock.marking_obstacle = not self.active_paddock.marking_obstacle
 
     def get_outline_side(self) -> bool:
         """Returns: `OutlineSide.LEFT` if the outline side is to the left, `OutlineSide.RIGHT` if it is to the right"""
