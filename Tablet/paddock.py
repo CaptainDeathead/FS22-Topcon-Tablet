@@ -28,6 +28,9 @@ class Paddock:
 
         self.new_boundary = []
 
+        self.worked_ha = 0.0
+        self.paint_mask_grid = {}
+
     @property
     def ha(self) -> float:
         return sum([(piece.area / self.mag ** 2) / 10000] for name, piece in self.boundaries.items())

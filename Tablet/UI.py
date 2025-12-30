@@ -701,3 +701,7 @@ class PieceDropdownSidebar(SubSidebar):
         super().__init__(x, y, buttons)
 
         self.hidden = False
+
+#class BottomBox:
+#    def __init__(self, paddock_manager: PaddockManager) -> None:
+#        self.paddock_manager = paddock_manager

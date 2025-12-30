@@ -142,6 +142,7 @@ class GPS:
         self.paint_cycle_index = 3
 
         self.last_boundary_rec_pos = [0, 0]
+        self.tmp_paint_surf = pg.Surface((1000, 1000), pg.SRCALPHA)
 
         self.paddock_manager = PaddockManager(self.infoboxes, self.remove_infobox)
         self.course_manager = CourseManager(self.get_working_width)
@@ -495,7 +496,7 @@ class GPS:
             if i == closest_line_index:
                 self.course_manager.closest_runline = (pr.Vector2(start[0], start[1]), pr.Vector2(end[0], end[1]))
 
-    def get_textures_in_rect(self, rect: pr.Rectangle, add: bool = False) -> list[tuple[tuple[int, int], pr.RenderTexture]]:
+    def get_textures_in_rect(self, rect: pr.Rectangle, add: bool = False) -> list[tuple[tuple[int, int], pr.RenderTexture, pg.Mask]]:
         rect_start = (rect.x / self.CHUNK_SIZE, rect.y / self.CHUNK_SIZE)
         rect_end  = ((rect.x + rect.width) / self.CHUNK_SIZE, (rect.y + rect.height) / self.CHUNK_SIZE)
 
@@ -504,21 +505,39 @@ class GPS:
         for x in range(floor(rect_start[0]), ceil(rect_end[0])):
             for y in range(floor(rect_start[1]), ceil(rect_end[1])):
                 if (x, y) in self.paint_tex_grid:
-                    textures.append(((x, y), self.paint_tex_grid[(x, y)]))
+                    textures.append(((x, y), self.paint_tex_grid[(x, y)], self.paddock_manager.active_paddock.paint_mask_grid[(x, y)]))
                 
                 # Create a new render texture and add it to the grid
                 elif add:
                     tex = pr.load_render_texture(self.CHUNK_SIZE, self.CHUNK_SIZE)
                     self.paint_tex_grid[(x, y)] = tex
-                    textures.append(((x, y), tex))
+
+                    mask = pg.Mask((self.CHUNK_SIZE, self.CHUNK_SIZE))
+                    self.paddock_manager.active_paddock.paint_mask_grid[(x, y)] = mask
+
+                    textures.append(((x, y), tex, mask))
 
         return textures
 
     def paint(self, start: tuple[int, int], end: tuple[int, int], width: float, color: pr.Color, loaded_textures: list[tuple[tuple[int, int], pr.RenderTexture]]) -> None:
-        for (tx, ty), texture in loaded_textures:
+        for (tx, ty), texture, mask in loaded_textures:
             pr.begin_texture_mode(texture)
             pr.draw_line_ex((start[0] - tx * self.CHUNK_SIZE, self.CHUNK_SIZE - (start[1] - ty * self.CHUNK_SIZE)), (end[0] - tx * self.CHUNK_SIZE, self.CHUNK_SIZE - (end[1] - ty * self.CHUNK_SIZE)), width, color)
             pr.end_texture_mode()
+
+            self.tmp_paint_surf.fill((0, 0, 0, 0))
+            pg.draw.line(self.tmp_paint_surf, (255, 255, 255), (start[0] - tx * self.CHUNK_SIZE, start[1] - ty * self.CHUNK_SIZE), (end[0] - tx * self.CHUNK_SIZE, end[1] - ty * self.CHUNK_SIZE), width=int(width))
+
+            og_area = mask.count()
+
+            paint_mask = pg.mask.from_surface(self.tmp_paint_surf, threshold = 254)
+            mask.draw(paint_mask, (0, 0))
+            self.paddock_manager.active_paddock.paint_mask_grid[(tx, ty)] = mask
+
+            new_area = mask.count()
+            ha = ((new_area - og_area) / (self.mag ** 2)) / 10000
+
+            self.paddock_manager.active_paddock.worked_ha += ha 
 
     def draw_lined_polygon(self, poly: list[tuple[float, float]]) -> None:
         for i, point in enumerate(poly[:-1]):
@@ -549,12 +568,14 @@ class GPS:
             #    pr.draw_texture(texture.texture, tx * self.CHUNK_SIZE, ty * self.CHUNK_SIZE, pr.GREEN)
 
             for (tx, ty), texture in self.paint_tex_grid.items():
-                pr.draw_texture(texture.texture, tx * self.CHUNK_SIZE, ty * self.CHUNK_SIZE, pr.GREEN)
+                pr.draw_texture(texture.texture, tx * self.CHUNK_SIZE, ty * self.CHUNK_SIZE, pr.WHITE)
 
             if self.paddock_manager.active_paddock is not None:
                 for name, piece in self.paddock_manager.active_paddock.boundaries.items():
                     self.draw_lined_polygon(list(piece.exterior.coords))
                     #print((piece.area / self.mag**2)/10000)
+
+                print(self.paddock_manager.active_paddock.worked_ha)
 
             self.draw_runlines()
 
