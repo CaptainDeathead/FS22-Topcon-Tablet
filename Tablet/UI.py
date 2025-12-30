@@ -1,6 +1,7 @@
 import pyray as pr
 import re
 
+from paddock import PaddockManager, OutlineSide
 from time import time
 
 class Button:
@@ -159,7 +160,7 @@ class CreatePaddockBox:
     width = 600
     height = 350
 
-    def __init__(self, x: int, y: int, paddock_manager: object) -> None:
+    def __init__(self, x: int, y: int, paddock_manager: PaddockManager) -> None:
         self.x = x
         self.y = y
         self.paddock_manager = paddock_manager
@@ -210,65 +211,6 @@ class CreatePaddockBox:
         self.accept_btn.update()
         self.cancel_btn.update()
 
-class InfoBoxSound:
-    def __init__(self):
-        # This is a lazy singleton
-        # I chose to use this because the infobox sounds can be stopped now so they dont overlap. It cannot be a normal (eager) singleton because that is created at runtime before audio is initialized
-        if not hasattr(self.__class__, "sound"):
-            self.__class__.sound = pr.load_sound("assets/sounds/gpsAlert.ogg")
-
-    def play(self):
-        if pr.is_sound_playing(self.sound):
-            pr.stop_sound(self.sound)
-        pr.play_sound(self.sound)
-
-class InfoBox:
-    DURATION = 5
-    AUDIO_DELAY = 1 # Delay before playing audio
-
-    WIDTH = 1000
-    HEIGHT = 100
-
-    FONT_SIZE = 40
-
-    def __init__(self, text: str, info_type: str, remove_infobox: object) -> None:
-        self.screen_width = pr.get_screen_width()
-        self.screen_height = pr.get_screen_height()
-
-        self.y = 0
-
-        self.text = text
-        self.start_time = time()
-
-        self.remove_infobox = remove_infobox
-        self.sound = InfoBoxSound()
-        self.played_sound = False
-
-        self.info_type = info_type
-
-        if info_type == 'info':
-            self.color = pr.GREEN
-        elif info_type == 'warning':
-            self.color = pr.ORANGE
-        elif info_type == 'error':
-            self.color = pr.RED
-        else:
-            print("Error when making infobox! Error: No valid info_type specified.")
-            self.color = pr.PURPLE
-
-        self.text_width = pr.measure_text(self.text, self.FONT_SIZE)
-
-    def update(self) -> None:
-        if time() - self.start_time >= self.DURATION:
-            self.remove_infobox(self)
-            return
-        elif time() - self.start_time >= self.AUDIO_DELAY and not self.played_sound:
-            self.sound.play()
-            self.played_sound = True
-        
-        pr.draw_rectangle(int(self.screen_width / 2 - self.WIDTH / 2), self.y, self.WIDTH, self.HEIGHT, self.color)
-        pr.draw_text(self.text, int(self.screen_width / 2 - self.text_width / 2), self.y + 30, self.FONT_SIZE, pr.WHITE)
-
 class Sidebar:
     ITEMS = ["paddock", "A", "nudge", "save", "zoom-in", "zoom-out", "settings", "wheel"]
 
@@ -277,7 +219,7 @@ class Sidebar:
 
     PADDING = 5
 
-    def __init__(self, settings: dict[str, any], is_autosteer_enabled: object, set_autosteer: object, paddock_manager: object, set_ab: object, nudge_runlines: object, save: object, zoom_in: object, zoom_out: object) -> None:
+    def __init__(self, settings: dict[str, any], is_autosteer_enabled: object, set_autosteer: object, paddock_manager: PaddockManager, set_ab: object, nudge_runlines: object, save: object, zoom_in: object, zoom_out: object) -> None:
         self.screen_width = pr.get_screen_width()
         self.screen_height = pr.get_screen_height()
 
@@ -343,7 +285,7 @@ class Sidebar:
         self.paddock_dropdown_x = self.screen_width - (self.BUTTON_WIDTH + self.PADDING * 2) * 2 - (PaddockDropdownSidebar.BUTTON_WIDTH + self.PADDING * 2)
         self.paddock_dropdown_y = self.buttons[self.ITEMS.index("paddock")].y
 
-        self.paddock_sidebar = PaddockSidebar(paddock_sidebar_x, paddock_sidebar_y, self.on_button_click)
+        self.paddock_sidebar = PaddockSidebar(paddock_sidebar_x, paddock_sidebar_y, self.paddock_manager, self.on_button_click)
         self.paddock_dropdown = None
 
         self.create_paddock_box = CreatePaddockBox(self.screen_width // 2 - CreatePaddockBox.width // 2, self.screen_height // 2 - CreatePaddockBox.height // 2, self.paddock_manager)
@@ -441,7 +383,7 @@ class Sidebar:
 
             case "toggle_boundary_outline": self.toggle_boundary_outline
             case "toggle_obstacle_outline": self.toggle_obstacle_outline
-            case "toggle_outline_side": self.toggle_outline_side
+            case "toggle_outline_side": self.paddock_manager.toggle_outline_side()
 
     def send_key_typing(self, char: str | None) -> None:
         if self.settings_box.active:
@@ -535,10 +477,19 @@ class SubSidebar:
 
 class PaddockSidebar(SubSidebar):
     items = ["select_paddock", "reset_paint", "create_paddock", "delete_paddock", "toggle_boundary_outline", "toggle_obstacle_outline", "toggle_outline_side"]
-    img_names = ["select_paddock", "erase", "create_paddock", "delete_paddock", "boundary_outline", "obstacle_outline", "boundary_side"]
+    img_names = ["select_paddock", "erase", "create_paddock", "delete_paddock", "boundary_outline", "obstacle_outline", "boundary_side_left"]
 
-    def __init__(self, x: int, y: int, onclick: object) -> None:
+    def __init__(self, x: int, y: int, paddock_manager: PaddockManager, onclick: object) -> None:
         self.onclick = onclick
+        self.paddock_manager = paddock_manager
+
+        side_left_img = pr.load_image(f"assets/boundary_side_left.png")
+        side_right_img = pr.load_image(f"assets/boundary_side_right.png")
+        pr.image_resize(side_left_img, self.BUTTON_WIDTH, self.BUTTON_HEIGHT)
+        pr.image_resize(side_right_img, self.BUTTON_WIDTH, self.BUTTON_HEIGHT)
+
+        self.boundary_side_left = pr.load_texture_from_image(side_left_img)
+        self.boundary_side_right = pr.load_texture_from_image(side_right_img)
 
         buttons = []
 
@@ -558,13 +509,21 @@ class PaddockSidebar(SubSidebar):
 
         super().__init__(x, y, buttons)
 
+    def update(self) -> None:
+        if self.paddock_manager.get_outline_side() == OutlineSide.LEFT:
+            self.buttons[self.items.index("toggle_outline_side")].image = self.boundary_side_left
+        else:
+            self.buttons[self.items.index("toggle_outline_side")].image = self.boundary_side_right
+
+        super().update()
+
 class PaddockDropdownSidebar(SubSidebar):
     BUTTON_WIDTH = 200
     BUTTON_HEIGHT = 20
 
     bg_color = pr.DARKGRAY
 
-    def __init__(self, x: int, y: int, paddock_manager: object, on_paddock_select: object) -> None:
+    def __init__(self, x: int, y: int, paddock_manager: PaddockManager, on_paddock_select: object) -> None:
         self.paddock_manager = paddock_manager
         self.on_paddock_select = on_paddock_select
 

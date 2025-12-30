@@ -9,7 +9,8 @@ import shutil
 from paddock import PaddockManager, Paddock
 from course import CourseManager
 
-from UI import Sidebar, Button, InfoBox
+from UI import Sidebar, Button
+from infobox import InfoBox
 from math import atan2, sin, cos, radians, degrees, dist, sqrt, floor, ceil
 from threading import Thread
 from pynput import keyboard

@@ -6,7 +6,7 @@ from ast import literal_eval
 from pathlib import Path
 from shapely import Polygon
 
-from UI import InfoBox
+from infobox import InfoBox
 
 class Paddock:
     CHUNK_SIZE = 1000
