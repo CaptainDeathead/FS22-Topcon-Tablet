@@ -1,4 +1,5 @@
 import pyray as pr
+import pygame as pg
 import os
 import shutil
 
@@ -11,14 +12,18 @@ from infobox import InfoBox
 class Paddock:
     CHUNK_SIZE = 1000
 
-    def __init__(self, name: str, file_path: str, infoboxes: list, remove_infobox: object) -> None:
+    def __init__(self, name: str, file_path: str, infoboxes: list, remove_infobox: object, mag: int) -> None:
         self.name = name
         self.file_path = file_path
 
         self.infoboxes = infoboxes
         self.remove_infobox = remove_infobox
 
+        self.mag = mag
+
         self.paint_tex_grid = {}
+        self.paint_mask_grid = {}
+
         self.runlines = {}
         self.boundaries = {}
         self.obstacles = {}
@@ -27,13 +32,11 @@ class Paddock:
         self.marking_obstacle = False
 
         self.new_boundary = []
-
         self.worked_ha = 0.0
-        self.paint_mask_grid = {}
 
     @property
     def ha(self) -> float:
-        return sum([(piece.area / self.mag ** 2) / 10000] for name, piece in self.boundaries.items())
+        return sum([(piece.area / self.mag ** 2) / 10000 for name, piece in self.boundaries.items()])
 
     def load(self) -> None:
         self.paint_tex_grid = {}
@@ -59,6 +62,24 @@ class Paddock:
             self.infoboxes.append(InfoBox("Paint data doesn't exist!", 'warning', self.remove_infobox))
 
             os.mkdir(paint_path)
+
+        self.paint_mask_grid = {}
+        mask_path = Path(self.file_path, ".mask-data")
+
+        if mask_path.exists():
+            for filename in os.listdir(mask_path):
+                img = pg.image.load(str(Path(self.file_path, ".mask-data", filename)))
+                mask = pg.mask.from_threshold(img, (255, 255, 255, 255), (1, 1, 1, 255))
+
+                self.worked_ha += (mask.count() / (self.mag ** 2)) / 10000
+
+                x, y = filename.replace(".png", "").split("_")
+                self.paint_mask_grid[(int(x), int(y))] = mask
+        else:
+            print(f"Mask data doesn't exist! Previous mask data cleared.")
+            self.infoboxes.append(InfoBox("Mask data doesn't exist!", 'warning', self.remove_infobox))
+
+            os.mkdir(mask_path)
 
         # AB data could also be changed or corrupted. More robust error handling should be implemented here too.
         self.runlines = {}
@@ -116,6 +137,7 @@ class Paddock:
     def save(self) -> None:
         # This should never be called without the `load` method being called, that is why directories are assumed to be created here
         paint_path = Path(self.file_path, ".paint-data")
+        mask_path = Path(self.file_path, ".mask-data")
         run_path = Path(self.file_path, ".run-data")
 
         root_path = Path(self.file_path, ".boundary-data")
@@ -123,11 +145,17 @@ class Paddock:
         obstacles_path = os.path.join(root_path, "obstacles")
 
         shutil.rmtree(paint_path, True)
+        shutil.rmtree(mask_path, True)
         os.mkdir(paint_path)
+        os.mkdir(mask_path)
 
         for (x, y) in self.paint_tex_grid.keys():
             image = pr.load_image_from_texture(self.paint_tex_grid[(x, y)].texture)
             pr.export_image(image, os.path.join(paint_path, f"{x}_{y}.png"))
+
+        for (x, y) in self.paint_mask_grid.keys():
+            surf = self.paint_mask_grid[(x, y)].to_surface()
+            pg.image.save(surf, os.path.join(mask_path, f"{x}_{y}.png"))
 
         for name, (run_dir, run_offset) in self.runlines:
             with open(os.path.join(run_path, name), "w") as f:
@@ -145,6 +173,8 @@ class Paddock:
 
     def reset_paint(self) -> None:
         self.paint_tex_grid = {}
+        self.mask_tex_grid = {}
+        self.worked_ha = 0.0
         self.infoboxes.append(InfoBox(f"Paint data cleared for {self.name} paddock.", 'warning', self.remove_infobox))
 
 class OutlineSide:
@@ -152,9 +182,11 @@ class OutlineSide:
     RIGHT = True
 
 class PaddockManager:
-    def __init__(self, infoboxes: list[InfoBox], remove_infobox: object) -> None:
+    def __init__(self, infoboxes: list[InfoBox], remove_infobox: object, mag: int) -> None:
         self.infoboxes = infoboxes
         self.remove_infobox = remove_infobox
+
+        self.mag = mag
 
         self.paddocks = []
         self.active_paddock = None
@@ -174,7 +206,7 @@ class PaddockManager:
             os.mkdir(".paddock-data")
 
         for pdk_dir in os.listdir(".paddock-data"):
-            self.paddocks.append(Paddock(pdk_dir, os.path.join(".paddock-data", pdk_dir), self.infoboxes, self.remove_infobox))
+            self.paddocks.append(Paddock(pdk_dir, os.path.join(".paddock-data", pdk_dir), self.infoboxes, self.remove_infobox, self.mag))
 
         if len(self.paddocks) == 0:
             self.create_paddock("default")
@@ -245,7 +277,7 @@ class PaddockManager:
         new_paddock_path = Path(".paddock-data", name)
         os.mkdir(new_paddock_path)
 
-        new_paddock = Paddock(name, new_paddock_path, self.infoboxes, self.remove_infobox)
+        new_paddock = Paddock(name, new_paddock_path, self.infoboxes, self.remove_infobox, self.mag)
 
         self.paddocks.append(new_paddock)
         self.load_paddock(name)

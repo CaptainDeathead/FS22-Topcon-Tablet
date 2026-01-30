@@ -9,7 +9,7 @@ import shutil
 from paddock import PaddockManager, Paddock, OutlineSide
 from course import CourseManager
 
-from UI import Sidebar, Button
+from UI import Sidebar, Button, BottomBox
 from infobox import InfoBox
 from math import atan2, sin, cos, radians, degrees, dist, sqrt, floor, ceil
 from threading import Thread
@@ -113,7 +113,7 @@ class GPS:
         self.client = Client(self.settings, self.is_autosteer_enabled, self.get_desired_wheel_rotation)
         Thread(target=self.client.run, daemon=True).start()
 
-        pr.set_config_flags(pr.ConfigFlags.FLAG_MSAA_4X_HINT)
+        #pr.set_config_flags(pr.ConfigFlags.FLAG_MSAA_4X_HINT)
         pr.init_window(self.WIDTH, self.HEIGHT, "TopconX35")
         pr.set_target_fps(60)
         pr.toggle_fullscreen()
@@ -144,7 +144,7 @@ class GPS:
         self.last_boundary_rec_pos = [0, 0]
         self.tmp_paint_surf = pg.Surface((1000, 1000), pg.SRCALPHA)
 
-        self.paddock_manager = PaddockManager(self.infoboxes, self.remove_infobox)
+        self.paddock_manager = PaddockManager(self.infoboxes, self.remove_infobox, self.mag)
         self.course_manager = CourseManager(self.get_working_width)
         
         self.autosteer_engage_sound = pr.load_sound("assets/sounds/SteeringEngagedAlarm.wav")
@@ -163,6 +163,7 @@ class GPS:
         self.trailer = Trailer()
 
         self.sidebar = Sidebar(self.settings, self.is_autosteer_enabled, self.set_autosteer, self.paddock_manager, self.set_ab, self.nudge_runlines, self.save, self.zoom_in, self.zoom_out)
+        self.bottombox = BottomBox(self.paddock_manager)
 
         self.main()
 
@@ -575,7 +576,7 @@ class GPS:
                     self.draw_lined_polygon(list(piece.exterior.coords))
                     #print((piece.area / self.mag**2)/10000)
 
-                print(self.paddock_manager.active_paddock.worked_ha)
+                #print(self.paddock_manager.active_paddock.worked_ha)
 
             self.draw_runlines()
 
@@ -636,6 +637,7 @@ class GPS:
                 self.infoboxes.append(InfoBox("No connection!", 'error', self.remove_infobox))
 
             self.sidebar.update()
+            self.bottombox.update()
 
             if self.sidebar.settings_box.restart_required:
                 self.save()

@@ -702,6 +702,23 @@ class PieceDropdownSidebar(SubSidebar):
 
         self.hidden = False
 
-#class BottomBox:
-#    def __init__(self, paddock_manager: PaddockManager) -> None:
-#        self.paddock_manager = paddock_manager
+class BottomBox:
+    width = 400
+    height = 100
+
+    bg_color = pr.DARKGRAY
+
+    def __init__(self, paddock_manager: PaddockManager) -> None:
+        self.paddock_manager = paddock_manager
+
+        self.screen_width = pr.get_screen_width()
+        self.screen_height = pr.get_screen_height()
+
+        self.x = self.screen_width - 65 - self.width
+        self.y = self.screen_height - self.height
+
+    def update(self) -> None:
+        pr.draw_rectangle(self.x, self.y, self.width, self.height, self.bg_color)
+
+        pr.draw_text(f"Worked Ha: {self.paddock_manager.active_paddock.worked_ha:.2f}", self.x + 5, self.y + 5, 20, pr.WHITE)
+        pr.draw_text(f"Remain Ha: {max(0, self.paddock_manager.active_paddock.ha - self.paddock_manager.active_paddock.worked_ha):.2f}", self.x + 5, self.y + 40, 20, pr.WHITE)
