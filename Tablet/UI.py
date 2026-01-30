@@ -714,7 +714,7 @@ class BottomBox:
         self.screen_width = pr.get_screen_width()
         self.screen_height = pr.get_screen_height()
 
-        self.x = self.screen_width - 65 - self.width
+        self.x = self.screen_width - 70 - self.width
         self.y = self.screen_height - self.height
 
     def update(self) -> None:
