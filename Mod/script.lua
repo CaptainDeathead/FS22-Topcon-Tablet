@@ -139,7 +139,12 @@ local function getRotation(item)
     return heading
 end
 
-local function printTransform(vehicle, tool)
+local function printTransform(xmlFile, vehicle, tool)
+    if xmlFile == nil then
+        print("self.xmlFile is nil")
+        return
+    end
+
     local vx, vy, vz = getWorldTranslation(vehicle.rootNode)
     local tx, ty, tz = getWorldTranslation(tool.rootNode)
 
@@ -161,12 +166,48 @@ local function printTransform(vehicle, tool)
 
     local toolType = tool.typeName
 
-    print(string.format(
-        "TopconX35 {'vx': %.2f, 'vy': %.2f, 'vz': %.2f, 'vry': %.2f, 'tx': %.2f, 'ty': %.2f, 'tz': %.2f, 'try': %.2f, 'on': %s, 'lowered': %s, 'work_width': %s, 'tool_type': %s}",
-        vx, vy, vz, vry, tx, ty, tz, try, on, lowered, width, toolType))
+    --print(string.format(
+    --    "TopconX35 {'vx': %.2f, 'vy': %.2f, 'vz': %.2f, 'vry': %.2f, 'tx': %.2f, 'ty': %.2f, 'tz': %.2f, 'try': %.2f, 'on': %s, 'lowered': %s, 'work_width': %s, 'tool_type': %s}",
+    --    vx, vy, vz, vry, tx, ty, tz, try, on, lowered, width, toolType))
+
+    xmlFile:setFloat("state.vx", vx)
+    xmlFile:setFloat("state.vy", vy)
+    xmlFile:setFloat("state.vz", vz)
+    xmlFile:setFloat("state.vry", vry)
+
+    -- Tool/world transform
+    xmlFile:setFloat("state.tx", tx)
+    xmlFile:setFloat("state.ty", ty)
+    xmlFile:setFloat("state.tz", tz)
+    xmlFile:setFloat("state.try", try)
+
+    -- Tool state
+    xmlFile:setBool("state.toolOn", on)
+    xmlFile:setBool("state.toolLowered", lowered)
+
+    -- Work data
+    xmlFile:setFloat("state.workWidth", width)
+
+    xmlFile:save()
 end
 
 function TopconX35:loadMap(name)
+    local settingsDir = getUserProfileAppPath() .. "modSettings/TopconX35/"
+    createFolder(settingsDir)
+
+    local xmlPath = settingsDir .. "state.xml"
+    print(string.format("Topcon: xmlPath (%s)", xmlPath))
+
+    -- Try to load existing XML
+    local xmlFile = XMLFile.load("TopconX35State", xmlPath)
+
+    -- If it doesn't exist, create it
+    if xmlFile == nil then
+        xmlFile = XMLFile.create("TopconX35State", xmlPath, "state")
+    end
+
+    self.xmlFile = xmlFile
+
     print("TopconX35 mod loaded.")
 end
 
@@ -177,14 +218,13 @@ function TopconX35:update(dt)
         if vehicle.getAttachedImplements ~= nil then
             for _, implement in pairs(vehicle:getAttachedImplements()) do
                 if implement.object ~= nil then
-                    printTransform(vehicle, implement.object)
+                    printTransform(self.xmlFile, vehicle, implement.object)
                     
                 end
             end
         else
-            if vehicle.getIsLowered ~= nil and vehicle.getIsTurnedOn ~= nil then
-                printTransform(vehilce, vehicle)
-            end
+            
+            --printTransform(self.xmlFile, vehicle, vehicle)
         end
     end
 end

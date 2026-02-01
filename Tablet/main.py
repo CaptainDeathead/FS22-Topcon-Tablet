@@ -389,8 +389,8 @@ class GPS:
         return qx, qy
 
     def get_working(self) -> bool:
-        on = self.client.data.get('on', False)
-        lowered = self.client.data.get('lowered', True)
+        on = self.client.data.get('toolOn', False)
+        lowered = self.client.data.get('toolLowered', True)
 
         on_required, lower_required = self.PAINT_CYCLES[self.paint_cycle_index]
 
@@ -552,7 +552,7 @@ class GPS:
             pr.begin_drawing()
             pr.clear_background((50, 50, 50))
 
-            new_work_width = self.client.data.get("work_width", None)
+            new_work_width = self.client.data.get("workWidth", None)
             self.update_vt_positions(new_work_width)
 
             if new_work_width is not None:

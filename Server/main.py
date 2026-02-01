@@ -3,6 +3,7 @@ import json
 import socket
 import os
 from tkinter import messagebox
+from lxml import etree
 
 from traceback import print_exc
 from copy import deepcopy
@@ -28,34 +29,58 @@ class DataManager:
         last_inode = None
 
         while True:
-            print("Rerunning watchdog...")
+            #print("Rerunning watchdog...")
 
-            try:
-                with open(self.log_path, "r") as file:
-                    file.seek(0, 2)  # Go to the end of the file
-                    last_inode = os.fstat(file.fileno()).st_ino
+            with open(self.log_path, "r") as file:
+                raw_xml = file.read()
+                if raw_xml == "": continue
+                root = etree.fromstring(raw_xml)
 
-                    for i in range(100):
-                        # Check if file was rotated or replaced
-                        current_inode = os.stat(self.log_path).st_ino
-                        if current_inode != last_inode:
-                            print("Log file rotated/replaced. Reopening...")
-                            break  # Exit inner loop and reopen
+                data = {}
+                for child in root:
+                    text = child.text.strip() if child.text else ""
+                    if text.lower() == "true":
+                        value = True
+                    elif text.lower() == "false":
+                        value = False
+                    elif text.lower() == "nil":
+                        value = None
+                    else:
+                        try:
+                            value = float(text)
+                        except ValueError:
+                            value = text
 
-                        line = file.readline()
+                    data[child.tag] = value
 
-                        if not line:
-                            file.seek(0, 1)  # HACK: force buffer refresh
-                            time.sleep(0.1)
-                            continue
+                self.curr_data = json.dumps(data)
 
-                        if self.gps_keyword in line:
-                            data = "{" + line.split("{", 1)[1].replace("'", '"').replace("nil", "null")
-                            self.curr_data = data
+                continue
 
-            except Exception as e:
-                print(f"{e}! Continuing...")
-                time.sleep(1)  # Avoid spamming errors
+                file.seek(0, 2)  # Go to the end of the file
+                last_inode = os.fstat(file.fileno()).st_ino
+
+                for i in range(100):
+                    # Check if file was rotated or replaced
+                    current_inode = os.stat(self.log_path).st_ino
+                    if current_inode != last_inode:
+                        print("Log file rotated/replaced. Reopening...")
+                        break  # Exit inner loop and reopen
+
+                    line = file.readline()
+
+                    if not line:
+                        file.seek(0, 1)  # HACK: force buffer refresh
+                        time.sleep(0.1)
+                        continue
+
+                    if self.gps_keyword in line:
+                        data = "{" + line.split("{", 1)[1].replace("'", '"').replace("nil", "null")
+                        self.curr_data = data
+
+            #except Exception as e:
+            #    print(f"{e}! Continuing...")
+            #    time.sleep(1)  # Avoid spamming errors
 
 class Server:
     HOST = '0.0.0.0'
@@ -91,6 +116,7 @@ class Server:
             print(f"Error while loading settings.json! Error: {e}.")
 
     def run_ui(self) -> None:
+        return
         while 1:
             messagebox.showinfo("TopconX35 - Server running!", "Server running! Close console to close.")
 
