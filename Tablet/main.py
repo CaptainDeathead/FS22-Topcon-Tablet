@@ -363,10 +363,13 @@ class GPS:
 
         self.infoboxes.append(InfoBox("Data save successful!", 'info', self.remove_infobox))
 
-    def update_vt_positions(self) -> None:
+    def update_vt_positions(self, new_work_width: float | None) -> None:
         self.vehicle.x = self.client.data.get('vx', 0)*self.mag
         self.vehicle.y = self.client.data.get('vz', 0)*self.mag
         self.vehicle.rotation = self.client.data.get('vry', 0)
+
+        if new_work_width is None or new_work_width == 0:
+            return
 
         self.trailer.x = self.client.data.get('tx', 0)*self.mag
         self.trailer.y = self.client.data.get('tz', 0)*self.mag
@@ -549,9 +552,8 @@ class GPS:
             pr.begin_drawing()
             pr.clear_background((50, 50, 50))
 
-            self.update_vt_positions()
-
             new_work_width = self.client.data.get("work_width", None)
+            self.update_vt_positions(new_work_width)
 
             if new_work_width is not None:
                 self.working_width = new_work_width * self.mag 
@@ -610,7 +612,9 @@ class GPS:
             # Blue guideline
             #pr.draw_line_ex((self.vehicle.x, self.vehicle.y), rot_origin_front, 1, pr.DARKBLUE)
 
-            pr.draw_line_ex(rot_origin_front, (rot_origin[0], rot_origin[1]), 0.5, pr.BLACK)
+            # Only draw drawbar if the tool is within <_> units to the vehicle
+            if dist(rot_origin_front, (rot_origin)) < 400:
+                pr.draw_line_ex(rot_origin_front, rot_origin, 0.5, pr.BLACK)
 
             color = self.get_working_color()
             color.a = 255

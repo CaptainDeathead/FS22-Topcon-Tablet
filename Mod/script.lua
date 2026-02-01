@@ -159,9 +159,11 @@ local function printTransform(vehicle, tool)
 
     local width, offset = getActualWorkWidth(vehicle)
 
+    local toolType = tool.typeName
+
     print(string.format(
-        "TopconX35 {'vx': %.2f, 'vy': %.2f, 'vz': %.2f, 'vry': %.2f, 'tx': %.2f, 'ty': %.2f, 'tz': %.2f, 'try': %.2f, 'on': %s, 'lowered': %s, 'work_width': %s}",
-        vx, vy, vz, vry, tx, ty, tz, try, on, lowered, width))
+        "TopconX35 {'vx': %.2f, 'vy': %.2f, 'vz': %.2f, 'vry': %.2f, 'tx': %.2f, 'ty': %.2f, 'tz': %.2f, 'try': %.2f, 'on': %s, 'lowered': %s, 'work_width': %s, 'tool_type': %s}",
+        vx, vy, vz, vry, tx, ty, tz, try, on, lowered, width, toolType))
 end
 
 function TopconX35:loadMap(name)
