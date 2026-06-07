@@ -173,29 +173,36 @@ class Server:
                         if data.get("recieved_wheel_connect"):
                             self.send_wheel_connect = False
                     
-                        if data.get("autosteer_status", False) and self.wheel_supported:
+                        #if data.get("autosteer_status", False) and self.wheel_supported:
+                        if self.wheel_supported:
                             desired_rotation = data.get("desired_wheel_rotation", None)
 
                             if desired_rotation is not None:
                                 desired_rotation = min(0.9, max(-0.9, desired_rotation))
+                                wheel.target_steer = desired_rotation
 
                                 if not wheel.is_rotating:
-                                    Thread(target=lambda: wheel.rotate_to(desired_rotation, 0.4), daemon=True).start()
-                        else:
-                            self.wheel_disconnect = False
-                    
+                                    Thread(target=lambda: wheel.rotate_to(0.4), daemon=True).start()
+ 
                         if self.wheel_supported:
+                            if data.get("autosteer_status", False):
+                                send_data["wheel_disconnect"] = self.wheel_disconnect
+                                self.wheel_disconnect = False
+                            
                             send_data["desired_wheel_rotation"] = wheel.get_state()["steering"]
 
                     except Exception as e:
                         print(f"Error: {e}!")
                         print_exc()
 
-                    send_data["wheel_disconnect"] = self.wheel_disconnect
+                    send_data["wheel_disconnect"] = send_data.get("wheel_disconnect", self.wheel_disconnect)
                     send_data["wheel_connect"] = self.send_wheel_connect
+                    #self.wheel_disconnect = False
                     
                     if self.enable_working_width_override:
                         send_data["working_width"] = self.working_width_override
+                    
+                    time.sleep(1/60)
 
                     conn.sendall(json.dumps(send_data).encode())
 

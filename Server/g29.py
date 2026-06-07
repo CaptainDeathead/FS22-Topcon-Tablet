@@ -1,9 +1,10 @@
 from g29py import G29
 from time import sleep
+from math import sqrt
 
 class Wheel(G29):
     INTRO_STEER_ACCURACY = 0.01
-    STEER_ACCURACY = 0.01 # Percentage of accuracy the rotate functions have (+/-)
+    STEER_ACCURACY = 0.00001 # Percentage of accuracy the rotate functions have (+/-)
     DISCONNECT_DIFF = 0.1 # Percentage limit of how far out dist is from closest_dist is before disconnect
 
     def __init__(self, on_wheel_disconnect: object, on_connect_pressed: object) -> None:
@@ -62,12 +63,14 @@ class Wheel(G29):
         print("Wheel movement detected.")
 
         self.is_rotating = False
+        self._stop_autorotate = False
+        self.target_steer = 0.0
 
-    def rotate_to(self, steer: float, speed: float) -> None:
+    def rotate_to(self, speed: float) -> None:
         speed /= 2
 
         curr_rot = self.get_state()["steering"]
-        dist = abs(steer - curr_rot)
+        dist = abs(self.target_steer - curr_rot)
 
         if dist < self.INTRO_STEER_ACCURACY: return
 
@@ -77,9 +80,9 @@ class Wheel(G29):
 
         self.is_rotating = True
 
-        while dist > self.STEER_ACCURACY:
+        while dist > self.STEER_ACCURACY and not self._stop_autorotate:
             curr_rot = self.get_state()["steering"]
-            dist = abs(steer - curr_rot)
+            dist = abs(self.target_steer - curr_rot)
 
             if dist < closest_dist:
                 closest_dist = dist
@@ -89,11 +92,11 @@ class Wheel(G29):
                 self.on_wheel_disconnect()
                 break
 
-            curr_speed = max(dist/2, min(speed, 0.125))
+            curr_speed = max(sqrt(dist/6), min(speed, 0.100))
             curr_speed = min(max(curr_speed, 0), 0.5)
             #print(curr_speed)
 
-            if steer < curr_rot:
+            if self.target_steer < curr_rot:
                 self.force_constant(0.5 + curr_speed)
             else:
                 self.force_constant(0.5 - curr_speed)
