@@ -131,6 +131,8 @@ class Server:
 
         except Exception as e:
             print(f"Error while initializing G29 support! Error: {e}! Autosteer will no longer be available because of this.")
+            import traceback
+            traceback.print_exc()
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

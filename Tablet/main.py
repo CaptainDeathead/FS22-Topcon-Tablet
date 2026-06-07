@@ -508,7 +508,7 @@ class GPS:
 
         for x in range(floor(rect_start[0]), ceil(rect_end[0])):
             for y in range(floor(rect_start[1]), ceil(rect_end[1])):
-                if (x, y) in self.paint_tex_grid:
+                if (x, y) in self.paint_tex_grid and (x, y) in self.paddock_manager.active_paddock.paint_mask_grid:
                     textures.append(((x, y), self.paint_tex_grid[(x, y)], self.paddock_manager.active_paddock.paint_mask_grid[(x, y)]))
                 
                 # Create a new render texture and add it to the grid
