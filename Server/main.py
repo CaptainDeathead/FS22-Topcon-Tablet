@@ -183,11 +183,14 @@ class Server:
 
                                 if not wheel.is_rotating:
                                     Thread(target=lambda: wheel.rotate_to(0.4), daemon=True).start()
- 
+
                         if self.wheel_supported:
                             if data.get("autosteer_status", False):
                                 send_data["wheel_disconnect"] = self.wheel_disconnect
                                 self.wheel_disconnect = False
+                            else:
+                                if wheel.is_rotating:
+                                    wheel._stop_autorotate = True
                             
                             send_data["desired_wheel_rotation"] = wheel.get_state()["steering"]
 
@@ -197,7 +200,7 @@ class Server:
 
                     send_data["wheel_disconnect"] = send_data.get("wheel_disconnect", self.wheel_disconnect)
                     send_data["wheel_connect"] = self.send_wheel_connect
-                    #self.wheel_disconnect = False
+                    self.wheel_disconnect = False
                     
                     if self.enable_working_width_override:
                         send_data["working_width"] = self.working_width_override

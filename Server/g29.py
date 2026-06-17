@@ -101,6 +101,7 @@ class Wheel(G29):
             else:
                 self.force_constant(0.5 - curr_speed)
 
+        self._stop_autorotate = False
         self.force_off()
         self.is_rotating = False
 
