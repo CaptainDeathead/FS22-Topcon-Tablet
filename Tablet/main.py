@@ -124,6 +124,8 @@ class GPS:
         pr.set_window_icon(icon)
         pr.unload_image(icon)
 
+        pr.set_gestures_enabled(0)
+
         self.keyboard_listener = keyboard.Listener(on_press=self.on_key_press, on_release=self.on_key_release)
         self.keyboard_listener.setDaemon(True)
         self.keyboard_listener.start()
@@ -150,8 +152,8 @@ class GPS:
         self.autosteer_engage_sound = pr.load_sound("assets/sounds/SteeringEngagedAlarm.wav")
         self.autosteer_disengage_sound = pr.load_sound("assets/sounds/SteeringDisengagedAlarm.wav")
 
-        pr.set_sound_volume(self.autosteer_engage_sound, 0.25)
-        pr.set_sound_volume(self.autosteer_disengage_sound, 0.25)
+        pr.set_sound_volume(self.autosteer_engage_sound, 0.15)
+        pr.set_sound_volume(self.autosteer_disengage_sound, 0.15)
 
         self.camera = pr.Camera2D()
         self.camera.zoom = 1.0

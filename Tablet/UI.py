@@ -739,5 +739,5 @@ class BottomBox:
     def update(self) -> None:
         pr.draw_rectangle(self.x, self.y, self.width, self.height, self.bg_color)
 
-        pr.draw_text(f"Worked Ha: {self.paddock_manager.active_paddock.worked_ha:.2f}", self.x + 5, self.y + 5, 20, pr.WHITE)
-        pr.draw_text(f"Remain Ha: {max(0, self.paddock_manager.active_paddock.ha - self.paddock_manager.active_paddock.worked_ha):.2f}", self.x + 5, self.y + 40, 20, pr.WHITE)
+        pr.draw_text(f"Worked Ha: {self.paddock_manager.active_paddock.worked_ha:.2f}", self.x + 5, self.y + 5, 30, pr.WHITE)
+        pr.draw_text(f"Remain Ha: {max(0, self.paddock_manager.active_paddock.ha - self.paddock_manager.active_paddock.worked_ha):.2f}", self.x + 5, self.y + 60, 30, pr.WHITE)
