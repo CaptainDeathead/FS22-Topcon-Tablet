@@ -267,14 +267,14 @@ class CreatePaddockBox:
         self.cancel_btn.update()
 
 class Sidebar:
-    ITEMS = ["paddock", "A", "nudge", "save", "zoom-in", "zoom-out", "settings", "wheel"]
+    ITEMS = ["paddock", "A", "nudge", "save", "tool_on_down", "zoom-in", "zoom-out", "settings", "wheel"]
 
     BUTTON_WIDTH = 60
     BUTTON_HEIGHT = 60
 
     PADDING = 5
 
-    def __init__(self, settings: dict[str, any], is_autosteer_enabled: object, set_autosteer: object, paddock_manager: PaddockManager, set_ab: object, nudge_runlines: object, save: object, zoom_in: object, zoom_out: object) -> None:
+    def __init__(self, settings: dict[str, any], is_autosteer_enabled: object, set_autosteer: object, paddock_manager: PaddockManager, set_ab: object, nudge_runlines: object, save: object, cycle_paint_requirements: object, get_paint_requirements: object, zoom_in: object, zoom_out: object) -> None:
         self.screen_width = pr.get_screen_width()
         self.screen_height = pr.get_screen_height()
 
@@ -285,6 +285,8 @@ class Sidebar:
         self.set_ab = set_ab
         self.nudge_runlines = nudge_runlines
         self.save = save
+        self.cycle_paint_requirements = cycle_paint_requirements
+        self.get_paint_requirements = get_paint_requirements
 
         self.paddock_manager = paddock_manager
 
@@ -419,6 +421,23 @@ class Sidebar:
 
             case "nudge": self.nudge_runlines()
             case "save": self.save()
+
+            case "tool_on_down":
+                self.cycle_paint_requirements()
+
+                img_path = ""
+                match self.get_paint_requirements():
+                    case 0: img_path = "assets/tool_off_up.png"
+                    case 1: img_path = "assets/tool_on_up.png"
+                    case 2: img_path = "assets/tool_off_down.png"
+                    case 3: img_path = "assets/tool_on_down.png"
+
+                img = pr.load_image(img_path)
+                pr.image_resize(img, self.BUTTON_WIDTH, self.BUTTON_HEIGHT)
+
+                tex = pr.load_texture_from_image(img)
+                self.buttons[self.ITEMS.index("tool_on_down")].image = tex
+
             case "zoom-in": self.zoom_in()
             case "zoom-out": self.zoom_out()
             case "settings": self.settings_box.active = not self.settings_box.active

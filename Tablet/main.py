@@ -162,7 +162,7 @@ class GPS:
         self.vehicle = Vehicle()
         self.trailer = Trailer()
 
-        self.sidebar = Sidebar(self.settings, self.is_autosteer_enabled, self.set_autosteer, self.paddock_manager, self.set_ab, self.nudge_runlines, self.save, self.zoom_in, self.zoom_out)
+        self.sidebar = Sidebar(self.settings, self.is_autosteer_enabled, self.set_autosteer, self.paddock_manager, self.set_ab, self.nudge_runlines, self.save, self.cycle_paint_requirements, self.get_paint_requirements, self.zoom_in, self.zoom_out)
         self.bottombox = BottomBox(self.paddock_manager)
 
         self.main()
@@ -238,6 +238,9 @@ class GPS:
 
     def remove_infobox(self, infobox: InfoBox) -> None:
         self.infoboxes.remove(infobox)
+
+    def get_paint_requirements(self) -> int:
+        return self.paint_cycle_index
 
     def cycle_paint_requirements(self) -> None:
         self.paint_cycle_index = (self.paint_cycle_index + 1) % len(self.PAINT_CYCLES)
