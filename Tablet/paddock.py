@@ -149,13 +149,19 @@ class Paddock:
         os.mkdir(paint_path)
         os.mkdir(mask_path)
 
-        for (x, y) in self.paint_tex_grid.keys():
-            image = pr.load_image_from_texture(self.paint_tex_grid[(x, y)].texture)
-            pr.export_image(image, os.path.join(paint_path, f"{x}_{y}.png"))
-
+        empty_tiles = []
         for (x, y) in self.paint_mask_grid.keys():
+            if self.paint_mask_grid[(x, y)].count() == 0:
+                empty_tiles.append((x, y))
+                continue
+
             surf = self.paint_mask_grid[(x, y)].to_surface()
             pg.image.save(surf, os.path.join(mask_path, f"{x}_{y}.png"))
+
+        for (x, y) in self.paint_tex_grid.keys():
+            if (x, y) in empty_tiles: continue
+            image = pr.load_image_from_texture(self.paint_tex_grid[(x, y)].texture)
+            pr.export_image(image, os.path.join(paint_path, f"{x}_{y}.png"))
 
         for name, (run_dir, run_offset) in self.runlines:
             with open(os.path.join(run_path, name), "w") as f:
@@ -254,6 +260,10 @@ class PaddockManager:
             raise Exception(f"Paddock name ({paddock_name}) not in paddocks!")
 
         self.save_active_paddock()
+
+        if self.active_paddock is not None:
+            for coord, tex in self.active_paddock.paint_tex_grid.items():
+                pr.unload_render_texture(tex)
 
         self.active_paddock = self.paddocks[paddock_names.index(paddock_name)]
         self.active_paddock.load()

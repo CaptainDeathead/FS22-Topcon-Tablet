@@ -220,6 +220,7 @@ class GPS:
             pr.unload_render_texture(texture)
 
         self.paint_tex_grid = {}
+        self.paddock_manager.active_paddock.paint_mask_grid = {}
 
         self.infoboxes.append(InfoBox("Paint data reset!", 'warning', self.remove_infobox))
 
@@ -500,11 +501,12 @@ class GPS:
             if i == closest_line_index:
                 self.course_manager.closest_runline = (pr.Vector2(start[0], start[1]), pr.Vector2(end[0], end[1]))
 
-    def get_textures_in_rect(self, rect: pr.Rectangle, add: bool = False) -> list[tuple[tuple[int, int], pr.RenderTexture, pg.Mask]]:
+    def get_textures_in_rect(self, rect: pr.Rectangle, add: bool = False) -> tuple[list[tuple[tuple[int, int], pr.RenderTexture, pg.Mask]], tuple[int, int]]:
         rect_start = (rect.x / self.CHUNK_SIZE, rect.y / self.CHUNK_SIZE)
         rect_end  = ((rect.x + rect.width) / self.CHUNK_SIZE, (rect.y + rect.height) / self.CHUNK_SIZE)
 
         textures = []
+        tmp_tiles = []
 
         for x in range(floor(rect_start[0]), ceil(rect_end[0])):
             for y in range(floor(rect_start[1]), ceil(rect_end[1])):
@@ -520,8 +522,9 @@ class GPS:
                     self.paddock_manager.active_paddock.paint_mask_grid[(x, y)] = mask
 
                     textures.append(((x, y), tex, mask))
+                    tmp_tiles.append((x, y))
 
-        return textures
+        return textures, tmp_tiles
 
     def paint(self, start: tuple[int, int], end: tuple[int, int], width: float, color: pr.Color, loaded_textures: list[tuple[tuple[int, int], pr.RenderTexture]]) -> None:
         for (tx, ty), texture, mask in loaded_textures:
@@ -548,6 +551,7 @@ class GPS:
             pr.draw_line_ex(point, poly[i+1], 1.0, pr.BLUE)
 
     def main(self) -> None:
+        empty_tiles = [] # Tiles that have been created that may not have been written to from moving around (wont exist on disk) can fill up ram if built up
         while not pr.window_should_close():
             pr.begin_drawing()
             pr.clear_background((50, 50, 50))
@@ -565,7 +569,26 @@ class GPS:
 
             pr.begin_mode_2d(self.camera)
 
-            loaded_textures = self.get_textures_in_rect(pr.Rectangle(self.vehicle.x - self.WIDTH, self.vehicle.y - self.HEIGHT, self.WIDTH * 2, self.HEIGHT * 2), add=True)
+            loaded_textures, new_tiles = self.get_textures_in_rect(pr.Rectangle(self.vehicle.x - self.WIDTH, self.vehicle.y - self.HEIGHT, self.WIDTH * 2, self.HEIGHT * 2), add=True)
+
+            loaded_tiles = [texture[0] for texture in loaded_textures]
+            empty_tiles_to_remove = []
+            for tile in empty_tiles:
+                if tile not in loaded_tiles and tile in self.paddock_manager.active_paddock.paint_mask_grid and self.paddock_manager.active_paddock.paint_mask_grid[tile].count() == 0:
+                    empty_tiles_to_remove.append(tile)
+
+            for tile in empty_tiles_to_remove:
+                if tile in self.paint_tex_grid:
+                    pr.unload_render_texture(self.paint_tex_grid[tile])
+                    del self.paddock_manager.active_paddock.paint_tex_grid[tile]
+
+                if tile in self.paddock_manager.active_paddock.paint_mask_grid:
+                    del self.paddock_manager.active_paddock.paint_mask_grid[tile]
+
+                empty_tiles.remove(tile)
+                print(f"Culled empty tile: {tile}.")
+
+            empty_tiles.extend(new_tiles)
 
             #for (tx, ty), texture in loaded_textures:
             #    pr.draw_texture(texture.texture, tx * self.CHUNK_SIZE, ty * self.CHUNK_SIZE, pr.GREEN)
