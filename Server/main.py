@@ -85,6 +85,7 @@ class DataManager:
 class Server:
     HOST = '0.0.0.0'
     PORT = 5060
+    BASE_WHEEL_SPEED = 0.4
 
     def __init__(self) -> None:
         self.wheel_disconnect = False
@@ -93,6 +94,8 @@ class Server:
         self.wheel_supported = False
         self.working_width_override = 6
         self.enable_working_width_override = False
+        
+        self.settings = {}
 
         self.load_settings()
 
@@ -105,12 +108,13 @@ class Server:
     def load_settings(self) -> None:
         try:
             with open("settings.json", "r") as f:
-                settings = json.loads(f.read())
+                self.settings = json.loads(f.read())
 
-            self.PORT = int(settings["server_port"])
-            self.working_width_override = settings["working_width_override"]
-            self.enable_working_width_override = settings["working_width_override"]
-            self.wheel_supported = settings["allow_autosteer"]
+            self.PORT = int(self.settings["server_port"])
+            self.working_width_override = self.settings["working_width_override"]
+            self.enable_working_width_override = self.settings["working_width_override"]
+            self.wheel_supported = self.settings["allow_autosteer"]
+            self.BASE_WHEEL_SPEED = float(self.settings.get("base_wheel_speed", 0.4))
 
         except Exception as e:
             print(f"Error while loading settings.json! Error: {e}.")
@@ -125,7 +129,7 @@ class Server:
         Thread(target=data_manager.run, daemon=True).start()
 
         try:
-            wheel = Wheel(self.on_wheel_disconnect, self.on_connect_pressed)
+            wheel = Wheel(self.settings, self.on_wheel_disconnect, self.on_connect_pressed)
             self.wheel_supported = True
             print("Wheel support enabled.")
 
@@ -182,7 +186,7 @@ class Server:
                                 wheel.target_steer = desired_rotation
 
                                 if not wheel.is_rotating:
-                                    Thread(target=lambda: wheel.rotate_to(0.4), daemon=True).start()
+                                    Thread(target=lambda: wheel.rotate_to(self.BASE_WHEEL_SPEED), daemon=True).start()
 
                         if self.wheel_supported:
                             if data.get("autosteer_status", False):

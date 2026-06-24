@@ -7,7 +7,7 @@ class Wheel(G29):
     STEER_ACCURACY = 0.00001 # Percentage of accuracy the rotate functions have (+/-)
     DISCONNECT_DIFF = 0.1 # Percentage limit of how far out dist is from closest_dist is before disconnect
 
-    def __init__(self, on_wheel_disconnect: object, on_connect_pressed: object) -> None:
+    def __init__(self, settings: dict, on_wheel_disconnect: object, on_connect_pressed: object) -> None:
         """
         For: self.get_state()["buttons"]
 
@@ -44,6 +44,10 @@ class Wheel(G29):
 
         self.on_wheel_disconnect = on_wheel_disconnect
         self.on_connect_pressed = on_connect_pressed
+
+        self.INTRO_STEER_ACCURACY = float(settings.get("intro_steer_accuracy", self.INTRO_STEER_ACCURACY))
+        self.STEER_ACCURACY = float(settings.get("steer_accuracy", self.STEER_ACCURACY)) # Percentage of accuracy the rotate functions have (+/-)
+        self.DISCONNECT_DIFF = float(settings.get("disconnect_diff", self.DISCONNECT_DIFF)) # Percentage limit of how far out dist is from closest_dist is before disconnect
 
         self.last_connect_pressed = False
 
