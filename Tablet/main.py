@@ -108,6 +108,7 @@ class GPS:
     GRID_SQUARE_SIZE = 100
 
     def __init__(self) -> None:
+        print(open("settings.json", 'r').read())
         self.settings = json.loads(open("settings.json", 'r').read())
 
         self.client = Client(self.settings, self.is_autosteer_enabled, self.get_desired_wheel_rotation)

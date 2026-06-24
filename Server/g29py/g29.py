@@ -44,6 +44,8 @@ class G29:
         }
     }
     dial_val = DIAL_CENTER
+    LOGITECH_VID = 0x046D
+    G29_PID = 0xC24F
 
     # Add dial
     def __init__(self):
@@ -58,6 +60,21 @@ class G29:
         self.connected = True
 
     def find_g29(self):
+        #print(hid.enumerate())
+        devices = hid.enumerate()
+
+        for d in devices:
+            if d.get("vendor_id") == self.LOGITECH_VID and d.get("product_id") == self.G29_PID:
+                print("Found g29")
+                try:
+                    dev = hid.Device(path=d["path"])
+                    #dev.open_path(d["path"])
+                    return dev
+                except Exception as e:
+                    print("Open failed:", e)
+
+        return None
+
         for path in list_devices():
             dev = InputDevice(path)
 
